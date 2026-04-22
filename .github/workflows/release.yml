@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/tradekit
+    permissions:
+      id-token: write  # trusted publishing
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Set up Python
+        run: uv python install 3.14
+
+      - name: Verify tag matches package version
+        run: |
+          TAG="${GITHUB_REF##*/}"
+          VERSION="v$(uv run python -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "Tag $TAG does not match pyproject version $VERSION"
+            exit 1
+          fi
+
+      - name: Build
+        run: uv build
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # Requires trusted publisher configured at
+        # https://pypi.org/manage/project/tradekit/settings/publishing/

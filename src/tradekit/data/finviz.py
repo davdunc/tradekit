@@ -14,8 +14,7 @@ from finvizfinance.screener.overview import Overview
 logger = logging.getLogger(__name__)
 
 _BROWSER_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 )
 
 # Finviz filter mappings
@@ -258,6 +257,7 @@ def _parse_news_html(html: str) -> list[dict]:
                     if "quote.ashx" in href:
                         # Extract from ?t=TICKER
                         import re
+
                         m = re.search(r"[?&]t=([A-Z]+)", href)
                         if m:
                             tickers.append(m.group(1))
@@ -273,13 +273,15 @@ def _parse_news_html(html: str) -> list[dict]:
         wiim_id = row.get("data-wiim-trigger", "")
         url = f"https://finviz.com/wiim.ashx?id={wiim_id}" if wiim_id else ""
 
-        results.append({
-            "timestamp": timestamp,
-            "headline": headline,
-            "source": source,
-            "tickers": tickers,
-            "sentiment": sentiment,
-            "url": url,
-        })
+        results.append(
+            {
+                "timestamp": timestamp,
+                "headline": headline,
+                "source": source,
+                "tickers": tickers,
+                "sentiment": sentiment,
+                "url": url,
+            }
+        )
 
     return results

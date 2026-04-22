@@ -86,18 +86,20 @@ def print_analysis(ticker: str, score: dict, levels: dict, quote: dict):
     price_color = "green" if change >= 0 else "red"
 
     console.print(f"  Price: [{price_color}]${price:.2f} ({change_pct:+.1f}%)[/{price_color}]")
-    console.print(f"  Volume: {_format_volume(quote.get('volume', 0))}  "
-                  f"Avg: {_format_volume(quote.get('avg_volume', 0))}")
+    console.print(
+        f"  Volume: {_format_volume(quote.get('volume', 0))}  Avg: {_format_volume(quote.get('avg_volume', 0))}"
+    )
     console.print()
 
     # Scores
     grade = score.get("grade", "?")
     grade_style = _grade_color(grade)
-    console.print(f"  [bold]Score:[/bold] [{grade_style}]{score.get('total', 0):.0f}/100 "
-                  f"({grade})[/{grade_style}]")
-    console.print(f"    Momentum: {score.get('momentum', 0):.0f}  "
-                  f"Trend: {score.get('trend', 0):.0f}  "
-                  f"Volume: {score.get('volume', 0):.0f}")
+    console.print(f"  [bold]Score:[/bold] [{grade_style}]{score.get('total', 0):.0f}/100 ({grade})[/{grade_style}]")
+    console.print(
+        f"    Momentum: {score.get('momentum', 0):.0f}  "
+        f"Trend: {score.get('trend', 0):.0f}  "
+        f"Volume: {score.get('volume', 0):.0f}"
+    )
     console.print()
 
     # Support/Resistance

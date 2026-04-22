@@ -1,5 +1,10 @@
 # tradekit
 
+[![CI](https://github.com/davdunc/tradekit/actions/workflows/ci.yml/badge.svg)](https://github.com/davdunc/tradekit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.14+](https://img.shields.io/badge/python-3.14+-blue.svg)](https://www.python.org/downloads/)
+[![PAI-compatible](https://img.shields.io/badge/PAI-compatible-purple.svg)](https://github.com/danielmiessler/Personal_AI_Infrastructure)
+
 > Personal trading infrastructure for pre-market screening, technical analysis, and trade setup evaluation.
 
 `tradekit` is a Python CLI that provides the analytical backbone for an SMB

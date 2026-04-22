@@ -1,8 +1,8 @@
 """Technical indicators using the `ta` library."""
 
 import pandas as pd
-from ta.momentum import RSIIndicator, StochRSIIndicator, StochasticOscillator
-from ta.trend import EMAIndicator, MACD, SMAIndicator
+from ta.momentum import RSIIndicator, StochasticOscillator, StochRSIIndicator
+from ta.trend import MACD, EMAIndicator, SMAIndicator
 from ta.volatility import AverageTrueRange
 
 
@@ -11,16 +11,16 @@ def compute_rsi(close: pd.Series, period: int = 14) -> pd.Series:
     return RSIIndicator(close=close, window=period).rsi()
 
 
-def compute_macd(
-    close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9
-) -> pd.DataFrame:
+def compute_macd(close: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.DataFrame:
     """Compute MACD line, signal line, and histogram."""
     macd = MACD(close=close, window_fast=fast, window_slow=slow, window_sign=signal)
-    return pd.DataFrame({
-        "macd": macd.macd(),
-        "macd_signal": macd.macd_signal(),
-        "macd_histogram": macd.macd_diff(),
-    })
+    return pd.DataFrame(
+        {
+            "macd": macd.macd(),
+            "macd_signal": macd.macd_signal(),
+            "macd_histogram": macd.macd_diff(),
+        }
+    )
 
 
 def compute_stochastic(
@@ -31,22 +31,24 @@ def compute_stochastic(
     d_period: int = 3,
 ) -> pd.DataFrame:
     """Compute Stochastic Oscillator (%K and %D)."""
-    stoch = StochasticOscillator(
-        high=high, low=low, close=close, window=k_period, smooth_window=d_period
+    stoch = StochasticOscillator(high=high, low=low, close=close, window=k_period, smooth_window=d_period)
+    return pd.DataFrame(
+        {
+            "stoch_k": stoch.stoch(),
+            "stoch_d": stoch.stoch_signal(),
+        }
     )
-    return pd.DataFrame({
-        "stoch_k": stoch.stoch(),
-        "stoch_d": stoch.stoch_signal(),
-    })
 
 
 def compute_stoch_rsi(close: pd.Series, period: int = 14, d_period: int = 3) -> pd.DataFrame:
     """Compute Stochastic RSI."""
     stoch_rsi = StochRSIIndicator(close=close, window=period, smooth1=d_period, smooth2=d_period)
-    return pd.DataFrame({
-        "stoch_rsi_k": stoch_rsi.stochrsi_k(),
-        "stoch_rsi_d": stoch_rsi.stochrsi_d(),
-    })
+    return pd.DataFrame(
+        {
+            "stoch_rsi_k": stoch_rsi.stochrsi_k(),
+            "stoch_rsi_d": stoch_rsi.stochrsi_d(),
+        }
+    )
 
 
 def compute_moving_averages(close: pd.Series, configs: list[dict] | None = None) -> pd.DataFrame:
@@ -84,9 +86,7 @@ def compute_rate_of_change(close: pd.Series, period: int = 10) -> pd.Series:
     return close.pct_change(periods=period) * 100
 
 
-def compute_atr(
-    high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14
-) -> pd.Series:
+def compute_atr(high: pd.Series, low: pd.Series, close: pd.Series, period: int = 14) -> pd.Series:
     """Compute Average True Range (ATR)."""
     return AverageTrueRange(high=high, low=low, close=close, window=period).average_true_range()
 

@@ -35,16 +35,13 @@ def generate_scan_report(df: pd.DataFrame, title: str = "Pre-Market Scan") -> st
     return "\n".join(lines)
 
 
-def generate_analysis_report(
-    ticker: str, score: dict, levels: dict, quote: dict
-) -> str:
+def generate_analysis_report(ticker: str, score: dict, levels: dict, quote: dict) -> str:
     """Generate Markdown analysis for a single ticker."""
     lines = [
         f"## {ticker} — {quote.get('name', '')}",
         "",
         f"**Price:** ${quote.get('price', 0):.2f}  ",
-        f"**Volume:** {_fmt_vol(quote.get('volume', 0))} "
-        f"(avg: {_fmt_vol(quote.get('avg_volume', 0))})",
+        f"**Volume:** {_fmt_vol(quote.get('volume', 0))} (avg: {_fmt_vol(quote.get('avg_volume', 0))})",
         "",
         f"### Score: {score.get('total', 0):.0f}/100 ({score.get('grade', '?')})",
         f"- Momentum: {score.get('momentum', 0):.0f}",

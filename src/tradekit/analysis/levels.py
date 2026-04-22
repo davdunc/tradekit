@@ -28,9 +28,7 @@ def compute_pivot_points(high: float, low: float, close: float) -> dict[str, flo
     }
 
 
-def find_local_extremes(
-    series: pd.Series, order: int = 5
-) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
+def find_local_extremes(series: pd.Series, order: int = 5) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
     """Find local minima and maxima in a price series.
 
     Args:
@@ -54,9 +52,7 @@ def find_local_extremes(
     return peaks, troughs
 
 
-def cluster_levels(
-    levels: list[float], tolerance_pct: float = 1.0
-) -> list[dict]:
+def cluster_levels(levels: list[float], tolerance_pct: float = 1.0) -> list[dict]:
     """Cluster nearby price levels into zones with strength scores.
 
     Args:
@@ -90,9 +86,7 @@ def cluster_levels(
     ]
 
 
-def find_support_resistance(
-    df: pd.DataFrame, order: int = 5, tolerance_pct: float = 1.5
-) -> dict[str, list[dict]]:
+def find_support_resistance(df: pd.DataFrame, order: int = 5, tolerance_pct: float = 1.5) -> dict[str, list[dict]]:
     """Find support and resistance levels from OHLCV data.
 
     Args:
@@ -129,12 +123,8 @@ def get_nearest_levels(
     n: int = 3,
 ) -> dict[str, list[dict]]:
     """Get the N nearest support and resistance levels to current price."""
-    resistance_above = [
-        r for r in sr_levels["resistance"] if r["level"] > current_price
-    ][:n]
+    resistance_above = [r for r in sr_levels["resistance"] if r["level"] > current_price][:n]
 
-    support_below = [
-        s for s in sr_levels["support"] if s["level"] < current_price
-    ][:n]
+    support_below = [s for s in sr_levels["support"] if s["level"] < current_price][:n]
 
     return {"resistance": resistance_above, "support": support_below}

@@ -13,12 +13,38 @@ from tradekit.screener.filters import (
 
 
 def _make_candidates() -> pd.DataFrame:
-    return pd.DataFrame([
-        {"ticker": "AAA", "pre_price": 10.0, "gap_pct": 5.0, "pre_volume": 500_000, "avg_volume": 1_000_000},
-        {"ticker": "BBB", "pre_price": 3.0, "gap_pct": 2.0, "pre_volume": 100_000, "avg_volume": 200_000},
-        {"ticker": "CCC", "pre_price": 50.0, "gap_pct": 8.0, "pre_volume": 1_000_000, "avg_volume": 5_000_000},
-        {"ticker": "DDD", "pre_price": 1.0, "gap_pct": 15.0, "pre_volume": 50_000, "avg_volume": 50_000},
-    ])
+    return pd.DataFrame(
+        [
+            {
+                "ticker": "AAA",
+                "pre_price": 10.0,
+                "gap_pct": 5.0,
+                "pre_volume": 500_000,
+                "avg_volume": 1_000_000,
+            },
+            {
+                "ticker": "BBB",
+                "pre_price": 3.0,
+                "gap_pct": 2.0,
+                "pre_volume": 100_000,
+                "avg_volume": 200_000,
+            },
+            {
+                "ticker": "CCC",
+                "pre_price": 50.0,
+                "gap_pct": 8.0,
+                "pre_volume": 1_000_000,
+                "avg_volume": 5_000_000,
+            },
+            {
+                "ticker": "DDD",
+                "pre_price": 1.0,
+                "gap_pct": 15.0,
+                "pre_volume": 50_000,
+                "avg_volume": 50_000,
+            },
+        ]
+    )
 
 
 class TestFilters:

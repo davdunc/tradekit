@@ -29,13 +29,15 @@ def _make_ohlcv(n: int = 100, seed: int = 42) -> pd.DataFrame:
     open_ = close + rng.normal(0, 0.5, n)
     volume = rng.integers(100_000, 1_000_000, n).astype(float)
 
-    return pd.DataFrame({
-        "open": open_,
-        "high": high,
-        "low": low,
-        "close": close,
-        "volume": volume,
-    })
+    return pd.DataFrame(
+        {
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+        }
+    )
 
 
 class TestIndicators:
@@ -104,31 +106,35 @@ class TestScoring:
         assert 0 <= score <= 100
 
     def test_score_trend_bullish(self):
-        row = pd.Series({
-            "close": 100,
-            "ema_9": 99,
-            "ema_20": 98,
-            "sma_50": 95,
-            "sma_200": 90,
-        })
+        row = pd.Series(
+            {
+                "close": 100,
+                "ema_9": 99,
+                "ema_20": 98,
+                "sma_50": 95,
+                "sma_200": 90,
+            }
+        )
         score = score_trend(row)
         assert score > 50  # should be bullish
 
     def test_composite_score_structure(self):
-        row = pd.Series({
-            "close": 100,
-            "rsi": 55,
-            "macd_histogram": 0.5,
-            "stoch_k": 60,
-            "stoch_d": 55,
-            "roc_10": 3.0,
-            "ema_9": 99,
-            "ema_20": 98,
-            "sma_50": 95,
-            "sma_200": 90,
-            "relative_volume": 2.0,
-            "vwap": 99,
-        })
+        row = pd.Series(
+            {
+                "close": 100,
+                "rsi": 55,
+                "macd_histogram": 0.5,
+                "stoch_k": 60,
+                "stoch_d": 55,
+                "roc_10": 3.0,
+                "ema_9": 99,
+                "ema_20": 98,
+                "sma_50": 95,
+                "sma_200": 90,
+                "relative_volume": 2.0,
+                "vwap": 99,
+            }
+        )
         result = compute_composite_score(row)
         assert "total" in result
         assert "grade" in result

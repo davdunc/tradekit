@@ -79,8 +79,11 @@ def cli(verbose: bool):
 @click.option("--max-price", type=float, default=None, help="Override maximum price.")
 @source_option
 def scan(
-    preset: str, min_gap: float | None, min_volume: int | None,
-    max_price: float | None, source: str | None,
+    preset: str,
+    min_gap: float | None,
+    min_volume: int | None,
+    max_price: float | None,
+    source: str | None,
 ):
     """Run the pre-market stock scanner."""
     from tradekit.reports.terminal import print_scan_results
@@ -237,7 +240,7 @@ def levels(ticker: str, period: str, source: str | None):
     # High volume nodes
     hvn = find_high_volume_nodes(df["close"], df["volume"])
     if hvn:
-        console.print(f"\n  [yellow]High Volume Nodes:[/yellow] " + "  ".join(f"${p:.2f}" for p in hvn))
+        console.print("\n  [yellow]High Volume Nodes:[/yellow] " + "  ".join(f"${p:.2f}" for p in hvn))
 
     console.print()
 
@@ -264,7 +267,7 @@ def regime(source: str | None):
     """Show market regime summary: SPY/QQQ/VIX + sector breadth."""
     from rich.table import Table
 
-    from tradekit.analysis.indicators import compute_all_indicators, compute_rsi
+    from tradekit.analysis.indicators import compute_all_indicators
     from tradekit.analysis.levels import find_support_resistance, get_nearest_levels
 
     provider = get_provider(source)
@@ -291,8 +294,16 @@ def regime(source: str | None):
 
             df = provider.get_history(sym, period="1y")
             if df.empty:
-                index_table.add_row(display, f"${price:.2f}", f"[{chg_style}]{chg_pct:+.2f}%[/{chg_style}]",
-                                    "-", "-", "-", "-", "-")
+                index_table.add_row(
+                    display,
+                    f"${price:.2f}",
+                    f"[{chg_style}]{chg_pct:+.2f}%[/{chg_style}]",
+                    "-",
+                    "-",
+                    "-",
+                    "-",
+                    "-",
+                )
                 continue
 
             df = compute_all_indicators(df)
@@ -335,12 +346,14 @@ def regime(source: str | None):
                 display,
                 f"${price:.2f}",
                 f"[{chg_style}]{chg_pct:+.2f}%[/{chg_style}]",
-                _vs(sma20), _vs(sma50), _vs(sma200),
+                _vs(sma20),
+                _vs(sma50),
+                _vs(sma200),
                 f"[{rsi_style}]{rsi:.0f}[/{rsi_style}]",
                 label,
             )
         except Exception as e:
-            index_table.add_row(display, "-", "-", "-", "-", "-", "-", f"[red]err[/red]")
+            index_table.add_row(display, "-", "-", "-", "-", "-", "-", "[red]err[/red]")
             logger.warning("Failed to fetch %s: %s", sym, e)
 
     console.print(index_table)
@@ -354,15 +367,26 @@ def regime(source: str | None):
             nearest = get_nearest_levels(spy_price, sr, n=2)
             r_str = "  ".join(f"${r['level']:.2f}" for r in nearest.get("resistance", []))
             s_str = "  ".join(f"${s['level']:.2f}" for s in nearest.get("support", []))
-            console.print(f"\n[bold]SPY Key Levels:[/bold]  [red]R: {r_str}[/red]  >  ${spy_price:.2f}  >  [green]S: {s_str}[/green]")
+            console.print(
+                f"\n[bold]SPY Key Levels:[/bold]  [red]R: {r_str}[/red]  "
+                f">  ${spy_price:.2f}  >  [green]S: {s_str}[/green]"
+            )
     except Exception as e:
         logger.warning("Failed to compute SPY levels: %s", e)
 
     # --- Sector breadth ---
     sector_etfs = {
-        "XLK": "Tech", "XLF": "Financials", "XLE": "Energy", "XLV": "Health",
-        "XLI": "Industrials", "XLC": "Comms", "XLY": "Cons Disc", "XLP": "Cons Staples",
-        "XLU": "Utilities", "XLRE": "Real Estate", "XLB": "Materials",
+        "XLK": "Tech",
+        "XLF": "Financials",
+        "XLE": "Energy",
+        "XLV": "Health",
+        "XLI": "Industrials",
+        "XLC": "Comms",
+        "XLY": "Cons Disc",
+        "XLP": "Cons Staples",
+        "XLU": "Utilities",
+        "XLRE": "Real Estate",
+        "XLB": "Materials",
     }
 
     console.print("\n[bold]Sector Breadth:[/bold]")
@@ -397,7 +421,9 @@ def regime(source: str | None):
     breadth_style = "green" if pct_green >= 60 else "yellow" if pct_green >= 40 else "red"
     console.print(f"\n  [{breadth_style}]Breadth: {green_count}/{total} green ({pct_green:.0f}%)[/{breadth_style}]")
     if sector_data:
-        console.print(f"  [green]Strongest:[/green] {sector_data[0][0]} ({sector_data[0][1]}) {sector_data[0][2]:+.2f}%")
+        console.print(
+            f"  [green]Strongest:[/green] {sector_data[0][0]} ({sector_data[0][1]}) {sector_data[0][2]:+.2f}%"
+        )
         console.print(f"  [red]Weakest:[/red]   {sector_data[-1][0]} ({sector_data[-1][1]}) {sector_data[-1][2]:+.2f}%")
     console.print()
 
@@ -677,17 +703,26 @@ def _collect_regime_data(provider) -> dict:
                     else:
                         label = "Downtrend"
 
-            indices.append({
-                "symbol": display, "price": price,
-                "change_pct": round(chg_pct, 2),
-                "rsi": round(rsi, 1), "label": label,
-            })
+            indices.append(
+                {
+                    "symbol": display,
+                    "price": price,
+                    "change_pct": round(chg_pct, 2),
+                    "rsi": round(rsi, 1),
+                    "label": label,
+                }
+            )
         except Exception as e:
             logger.warning("Failed to fetch %s: %s", sym, e)
-            indices.append({
-                "symbol": display, "price": 0, "change_pct": 0,
-                "rsi": 0, "label": "Error",
-            })
+            indices.append(
+                {
+                    "symbol": display,
+                    "price": 0,
+                    "change_pct": 0,
+                    "rsi": 0,
+                    "label": "Error",
+                }
+            )
 
     # SPY key levels
     spy_levels = {"resistance": [], "support": []}
@@ -702,9 +737,17 @@ def _collect_regime_data(provider) -> dict:
 
     # Sector breadth
     sector_etfs = {
-        "XLK": "Tech", "XLF": "Financials", "XLE": "Energy", "XLV": "Health",
-        "XLI": "Industrials", "XLC": "Comms", "XLY": "Cons Disc", "XLP": "Cons Staples",
-        "XLU": "Utilities", "XLRE": "Real Estate", "XLB": "Materials",
+        "XLK": "Tech",
+        "XLF": "Financials",
+        "XLE": "Energy",
+        "XLV": "Health",
+        "XLI": "Industrials",
+        "XLC": "Comms",
+        "XLY": "Cons Disc",
+        "XLP": "Cons Staples",
+        "XLU": "Utilities",
+        "XLRE": "Real Estate",
+        "XLB": "Materials",
     }
     green_count = 0
     sector_data = []
@@ -754,24 +797,34 @@ def _collect_regime_data(provider) -> dict:
                 else:
                     label = "Downtrend"
 
-            energy_futures.append({
-                "symbol": name, "price": price,
-                "change_pct": round(chg_pct, 2),
-                "rsi": round(rsi, 1), "label": label,
-            })
+            energy_futures.append(
+                {
+                    "symbol": name,
+                    "price": price,
+                    "change_pct": round(chg_pct, 2),
+                    "rsi": round(rsi, 1),
+                    "label": label,
+                }
+            )
         except Exception as e:
             logger.warning("Failed to fetch %s: %s", sym, e)
-            energy_futures.append({
-                "symbol": name, "price": 0, "change_pct": 0,
-                "rsi": 0, "label": "Error",
-            })
+            energy_futures.append(
+                {
+                    "symbol": name,
+                    "price": 0,
+                    "change_pct": 0,
+                    "rsi": 0,
+                    "label": "Error",
+                }
+            )
 
     return {
         "indices": indices,
         "spy_levels": spy_levels,
         "energy_futures": energy_futures,
         "sector_breadth": {
-            "green": green_count, "total": total,
+            "green": green_count,
+            "total": total,
             "pct_green": round(pct_green, 0),
             "strongest": sector_data[0] if sector_data else None,
             "weakest": sector_data[-1] if sector_data else None,
@@ -781,7 +834,9 @@ def _collect_regime_data(provider) -> dict:
 
 
 def _build_news_rows(
-    news_items: list[dict], provider, top_n: int = 4,
+    news_items: list[dict],
+    provider,
+    top_n: int = 4,
     yt_context: dict | None = None,
 ) -> list[dict]:
     """Convert Finviz news items into game plan table rows, ranked by avg volume.
@@ -847,22 +902,26 @@ def _build_news_rows(
         if yt_note:
             note = f"{note} | StockedUp: {yt_note}"
 
-        rows.append({
-            "ticker": ticker,
-            "support": support_str,
-            "resistance": resistance_str,
-            "inflexion": "",
-            "notes": note,
-            "bias": ticker_sentiment.get(ticker, "NEUT"),
-            "setup": "",
-            "trading_plan": "",
-        })
+        rows.append(
+            {
+                "ticker": ticker,
+                "support": support_str,
+                "resistance": resistance_str,
+                "inflexion": "",
+                "notes": note,
+                "bias": ticker_sentiment.get(ticker, "NEUT"),
+                "setup": "",
+                "trading_plan": "",
+            }
+        )
 
     return rows
 
 
 def _build_second_day_rows(
-    second_day_df, provider, yt_context: dict | None = None,
+    second_day_df,
+    provider,
+    yt_context: dict | None = None,
 ) -> list[dict]:
     """Convert second-day DataFrame into game plan table rows with levels."""
     from tradekit.analysis.levels import find_support_resistance, get_nearest_levels
@@ -905,16 +964,18 @@ def _build_second_day_rows(
 
         bias = "BULL" if chg > 0 and pre_gap > 0 else "BEAR" if chg < 0 and pre_gap < 0 else "NEUT"
 
-        rows.append({
-            "ticker": ticker,
-            "support": support_str,
-            "resistance": resistance_str,
-            "inflexion": "",
-            "notes": ", ".join(notes_parts),
-            "bias": bias,
-            "setup": "",
-            "trading_plan": "",
-        })
+        rows.append(
+            {
+                "ticker": ticker,
+                "support": support_str,
+                "resistance": resistance_str,
+                "inflexion": "",
+                "notes": ", ".join(notes_parts),
+                "bias": bias,
+                "setup": "",
+                "trading_plan": "",
+            }
+        )
 
     return rows
 
@@ -945,9 +1006,18 @@ def _fetch_stocked_up_context() -> dict:
     # Get latest video URL
     try:
         result = subprocess.run(
-            [yt_dlp, "--flat-playlist", "--print", "%(url)s\t%(title)s",
-             "--playlist-items", "1", f"{_STOCKED_UP_CHANNEL}/videos"],
-            capture_output=True, text=True, timeout=30,
+            [
+                yt_dlp,
+                "--flat-playlist",
+                "--print",
+                "%(url)s\t%(title)s",
+                "--playlist-items",
+                "1",
+                f"{_STOCKED_UP_CHANNEL}/videos",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode != 0 or not result.stdout.strip():
             logger.warning("yt-dlp failed to get latest video: %s", result.stderr[:200])
@@ -963,15 +1033,35 @@ def _fetch_stocked_up_context() -> dict:
 
     # Run fabric extract_wisdom on the video
     try:
-        logger.debug("Running: %s -y %s -p extract_wisdom -m %s -V %s",
-                      fabric, video_url, _FABRIC_MODEL, _FABRIC_VENDOR)
-        result = subprocess.run(
-            [fabric, "-y", video_url, "-p", "extract_wisdom",
-             "-m", _FABRIC_MODEL, "-V", _FABRIC_VENDOR],
-            capture_output=True, text=True, timeout=180,
+        logger.debug(
+            "Running: %s -y %s -p extract_wisdom -m %s -V %s",
+            fabric,
+            video_url,
+            _FABRIC_MODEL,
+            _FABRIC_VENDOR,
         )
-        logger.debug("fabric rc=%d stdout_len=%d stderr_len=%d",
-                      result.returncode, len(result.stdout), len(result.stderr))
+        result = subprocess.run(
+            [
+                fabric,
+                "-y",
+                video_url,
+                "-p",
+                "extract_wisdom",
+                "-m",
+                _FABRIC_MODEL,
+                "-V",
+                _FABRIC_VENDOR,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        logger.debug(
+            "fabric rc=%d stdout_len=%d stderr_len=%d",
+            result.returncode,
+            len(result.stdout),
+            len(result.stderr),
+        )
         if not result.stdout.strip():
             logger.warning("fabric returned no output: %s", result.stderr[:300])
             return {}
@@ -1005,19 +1095,100 @@ def _fetch_stocked_up_context() -> dict:
 
     # Extract ticker mentions from REFERENCES, IDEAS, FACTS, RECOMMENDATIONS
     # Match 1-5 char uppercase words that look like tickers
-    ticker_pattern = re.compile(r'\b([A-Z]{1,5})\b')
+    ticker_pattern = re.compile(r"\b([A-Z]{1,5})\b")
     # Common words to exclude
     _NOT_TICKERS = {
-        "THE", "AND", "FOR", "ARE", "BUT", "NOT", "YOU", "ALL", "CAN", "HAS",
-        "HER", "WAS", "ONE", "OUR", "OUT", "DAY", "GET", "HIS", "HOW", "ITS",
-        "MAY", "NEW", "NOW", "OLD", "SEE", "WAY", "WHO", "DID", "LET", "SAY",
-        "SHE", "TOO", "USE", "WITH", "THAT", "THIS", "FROM", "THEY", "BEEN",
-        "HAVE", "MANY", "SOME", "THEM", "THAN", "EACH", "MAKE", "LIKE", "LONG",
-        "LOOK", "MUCH", "THEN", "WHAT", "WHEN", "WILL", "MORE", "ALSO", "BACK",
-        "BEEN", "CALL", "COME", "ONLY", "OVER", "SUCH", "TAKE", "YEAR", "YOUR",
-        "HIGH", "LOW", "BUY", "SELL", "PUT", "ETF", "IPO", "CEO", "GDP", "FED",
-        "SEC", "LNG", "ATH", "ATR", "RSI", "EPS", "P&L", "SUMMARY", "IDEAS",
-        "FACTS", "QUOTES", "HABITS", "REFERENCES", "RECOMMENDATIONS", "INSIGHTS",
+        "THE",
+        "AND",
+        "FOR",
+        "ARE",
+        "BUT",
+        "NOT",
+        "YOU",
+        "ALL",
+        "CAN",
+        "HAS",
+        "HER",
+        "WAS",
+        "ONE",
+        "OUR",
+        "OUT",
+        "DAY",
+        "GET",
+        "HIS",
+        "HOW",
+        "ITS",
+        "MAY",
+        "NEW",
+        "NOW",
+        "OLD",
+        "SEE",
+        "WAY",
+        "WHO",
+        "DID",
+        "LET",
+        "SAY",
+        "SHE",
+        "TOO",
+        "USE",
+        "WITH",
+        "THAT",
+        "THIS",
+        "FROM",
+        "THEY",
+        "BEEN",
+        "HAVE",
+        "MANY",
+        "SOME",
+        "THEM",
+        "THAN",
+        "EACH",
+        "MAKE",
+        "LIKE",
+        "LONG",
+        "LOOK",
+        "MUCH",
+        "THEN",
+        "WHAT",
+        "WHEN",
+        "WILL",
+        "MORE",
+        "ALSO",
+        "BACK",
+        "BEEN",
+        "CALL",
+        "COME",
+        "ONLY",
+        "OVER",
+        "SUCH",
+        "TAKE",
+        "YEAR",
+        "YOUR",
+        "HIGH",
+        "LOW",
+        "BUY",
+        "SELL",
+        "PUT",
+        "ETF",
+        "IPO",
+        "CEO",
+        "GDP",
+        "FED",
+        "SEC",
+        "LNG",
+        "ATH",
+        "ATR",
+        "RSI",
+        "EPS",
+        "P&L",
+        "SUMMARY",
+        "IDEAS",
+        "FACTS",
+        "QUOTES",
+        "HABITS",
+        "REFERENCES",
+        "RECOMMENDATIONS",
+        "INSIGHTS",
     }
 
     ticker_notes: dict[str, str] = {}
@@ -1027,10 +1198,7 @@ def _fetch_stocked_up_context() -> dict:
             bullet_line = bullet_line.strip()
             if not bullet_line:
                 continue
-            found_tickers = [
-                t for t in ticker_pattern.findall(bullet_line)
-                if t not in _NOT_TICKERS and len(t) >= 2
-            ]
+            found_tickers = [t for t in ticker_pattern.findall(bullet_line) if t not in _NOT_TICKERS and len(t) >= 2]
             for t in found_tickers:
                 # Keep the first mention as the note
                 if t not in ticker_notes:

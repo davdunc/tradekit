@@ -29,9 +29,7 @@ class YahooProvider:
             "name": info.get("shortName", ticker),
         }
 
-    def get_history(
-        self, ticker: str, period: str = "3mo", interval: str = "1d"
-    ) -> pd.DataFrame:
+    def get_history(self, ticker: str, period: str = "3mo", interval: str = "1d") -> pd.DataFrame:
         """Get historical OHLCV data as a DataFrame."""
         t = yf.Ticker(ticker)
         df = t.history(period=period, interval=interval)

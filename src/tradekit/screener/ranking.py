@@ -53,14 +53,16 @@ def rank_candidates(
             score = compute_composite_score(latest, weights)
 
             quote = provider.get_quote(ticker)
-            results.append({
-                "ticker": ticker,
-                "name": quote.get("name", ticker),
-                "price": quote.get("price", latest.get("close", 0)),
-                "volume": quote.get("volume", 0),
-                "avg_volume": quote.get("avg_volume", 0),
-                **score,
-            })
+            results.append(
+                {
+                    "ticker": ticker,
+                    "name": quote.get("name", ticker),
+                    "price": quote.get("price", latest.get("close", 0)),
+                    "volume": quote.get("volume", 0),
+                    "avg_volume": quote.get("avg_volume", 0),
+                    **score,
+                }
+            )
         except Exception as e:
             logger.warning("Failed to rank %s: %s", ticker, e)
 

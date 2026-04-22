@@ -1,7 +1,6 @@
 """HTML game plan report generator — SMB Capital dashboard style."""
 
 import datetime
-import os
 from html import escape
 from pathlib import Path
 
@@ -94,8 +93,7 @@ _CHART_ICON_SVG = (
 def _ticker_link(ticker: str) -> str:
     t = escape(ticker)
     return (
-        f'<a class="ticker-badge" href="https://finviz.com/quote.ashx?t={t}" '
-        f'target="_blank">{_CHART_ICON_SVG} {t}</a>'
+        f'<a class="ticker-badge" href="https://finviz.com/quote.ashx?t={t}" target="_blank">{_CHART_ICON_SVG} {t}</a>'
     )
 
 
@@ -165,8 +163,8 @@ def _regime_html(regime_data: dict) -> str:
         rsi = idx.get("rsi", 0)
         label = escape(str(idx.get("label", "")))
         idx_rows.append(
-            f'<tr><td><strong>{sym}</strong></td>'
-            f'<td>${price:.2f}</td>'
+            f"<tr><td><strong>{sym}</strong></td>"
+            f"<td>${price:.2f}</td>"
             f'<td class="{chg_cls}">{chg:+.2f}%</td>'
             f"<td>{rsi:.0f}</td>"
             f"<td>{label}</td></tr>"
@@ -182,8 +180,8 @@ def _regime_html(regime_data: dict) -> str:
         rsi = ef.get("rsi", 0)
         label = escape(str(ef.get("label", "")))
         energy_rows.append(
-            f'<tr><td><strong>{sym}</strong></td>'
-            f'<td>${price:.2f}</td>'
+            f"<tr><td><strong>{sym}</strong></td>"
+            f"<td>${price:.2f}</td>"
             f'<td class="{chg_cls}">{chg:+.2f}%</td>'
             f"<td>{rsi:.0f}</td>"
             f"<td>{label}</td></tr>"
@@ -208,7 +206,9 @@ def _regime_html(regime_data: dict) -> str:
         strongest_str = f'Strongest: <span class="chg-pos">{escape(strongest[0])} ({escape(strongest[1])}) {strongest[2]:+.2f}%</span>'
     weakest_str = ""
     if weakest:
-        weakest_str = f'Weakest: <span class="chg-neg">{escape(weakest[0])} ({escape(weakest[1])}) {weakest[2]:+.2f}%</span>'
+        weakest_str = (
+            f'Weakest: <span class="chg-neg">{escape(weakest[0])} ({escape(weakest[1])}) {weakest[2]:+.2f}%</span>'
+        )
 
     energy_section = ""
     if energy_rows:

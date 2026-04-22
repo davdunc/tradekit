@@ -51,9 +51,7 @@ class MassiveProvider:
         self._api_key = settings.data.massive_api_key or os.environ.get("MASSIVE_API_KEY", "")
         self._package = settings.massive_mcp_package
         if not self._api_key:
-            raise ValueError(
-                "MASSIVE_API_KEY is required. Set it in .env or as an environment variable."
-            )
+            raise ValueError("MASSIVE_API_KEY is required. Set it in .env or as an environment variable.")
 
     def _server_params(self) -> StdioServerParameters:
         return StdioServerParameters(
@@ -103,10 +101,12 @@ class MassiveProvider:
     def get_quote(self, ticker: str) -> dict:
         """Get current quote data from Massive snapshot + previous close."""
         results = self._run(
-            self._call_tools_batch([
-                ("get_snapshot_ticker", {"market_type": "stocks", "ticker": ticker}),
-                ("get_previous_close_agg", {"ticker": ticker}),
-            ])
+            self._call_tools_batch(
+                [
+                    ("get_snapshot_ticker", {"market_type": "stocks", "ticker": ticker}),
+                    ("get_previous_close_agg", {"ticker": ticker}),
+                ]
+            )
         )
         snap = results[0]
         prev = results[1]
@@ -133,9 +133,7 @@ class MassiveProvider:
             "name": ticker_data.get("name", ticker),
         }
 
-    def get_history(
-        self, ticker: str, period: str = "3mo", interval: str = "1d"
-    ) -> pd.DataFrame:
+    def get_history(self, ticker: str, period: str = "3mo", interval: str = "1d") -> pd.DataFrame:
         """Get historical OHLCV data as a DataFrame."""
         delta = _PERIOD_MAP.get(period, timedelta(days=90))
         multiplier, timespan = _INTERVAL_MAP.get(interval, (1, "day"))
@@ -178,11 +176,7 @@ class MassiveProvider:
 
     def get_premarket(self, ticker: str) -> dict:
         """Get pre-market quote data from Massive snapshot."""
-        snap = self._run(
-            self._call_tool(
-                "get_snapshot_ticker", {"market_type": "stocks", "ticker": ticker}
-            )
-        )
+        snap = self._run(self._call_tool("get_snapshot_ticker", {"market_type": "stocks", "ticker": ticker}))
 
         ticker_data = snap.get("ticker", snap)
         session = ticker_data.get("session", {})

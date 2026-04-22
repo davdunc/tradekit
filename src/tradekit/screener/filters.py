@@ -78,16 +78,20 @@ def build_filter_chain(config: dict) -> list[FilterFunc]:
     filters: list[FilterFunc] = []
 
     if "min_price" in config or "max_price" in config:
-        filters.append(price_filter(
-            min_price=config.get("min_price", 0),
-            max_price=config.get("max_price", float("inf")),
-        ))
+        filters.append(
+            price_filter(
+                min_price=config.get("min_price", 0),
+                max_price=config.get("max_price", float("inf")),
+            )
+        )
 
     if "min_premarket_volume" in config:
-        filters.append(volume_filter(
-            min_volume=config["min_premarket_volume"],
-            column="pre_volume",
-        ))
+        filters.append(
+            volume_filter(
+                min_volume=config["min_premarket_volume"],
+                column="pre_volume",
+            )
+        )
 
     if "min_gap_pct" in config:
         filters.append(gap_filter(min_gap_pct=config["min_gap_pct"]))

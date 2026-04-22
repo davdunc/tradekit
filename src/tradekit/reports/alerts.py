@@ -15,9 +15,7 @@ def send_slack_alert(webhook_url: str, message: str) -> bool:
     return False
 
 
-def send_email_alert(
-    host: str, user: str, password: str, to: str, subject: str, body: str
-) -> bool:
+def send_email_alert(host: str, user: str, password: str, to: str, subject: str, body: str) -> bool:
     """Send an email alert. Phase 2 implementation."""
     if not all([host, user, password]):
         logger.debug("Email not configured, skipping alert")

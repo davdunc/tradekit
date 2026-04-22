@@ -117,9 +117,7 @@ def score_volume(row: pd.Series) -> float:
     return max(0, min(100, score))
 
 
-def compute_composite_score(
-    row: pd.Series, weights: dict[str, float] | None = None
-) -> dict:
+def compute_composite_score(row: pd.Series, weights: dict[str, float] | None = None) -> dict:
     """Compute composite score with sub-scores.
 
     Args:

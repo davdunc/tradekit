@@ -46,12 +46,8 @@ class BacktestProvider:
 
     def __init__(self):
         settings = get_settings()
-        access_key = settings.data.backtest_access_key or os.environ.get(
-            "BACKTEST_ACCESS_KEY", ""
-        )
-        secret_key = settings.data.backtest_secret_key or os.environ.get(
-            "BACKTEST_SECRET_KEY", ""
-        )
+        access_key = settings.data.backtest_access_key or os.environ.get("BACKTEST_ACCESS_KEY", "")
+        secret_key = settings.data.backtest_secret_key or os.environ.get("BACKTEST_SECRET_KEY", "")
         if not access_key or not secret_key:
             raise ValueError(
                 "BACKTEST_ACCESS_KEY and BACKTEST_SECRET_KEY are required. "
@@ -108,9 +104,7 @@ class BacktestProvider:
         with gzip.open(io.BytesIO(raw), "rt") as f:
             return pd.read_csv(f)
 
-    def get_history(
-        self, ticker: str, period: str = "3mo", interval: str = "1d"
-    ) -> pd.DataFrame:
+    def get_history(self, ticker: str, period: str = "3mo", interval: str = "1d") -> pd.DataFrame:
         """Get historical OHLCV data for a ticker from S3 flat files."""
         delta = _PERIOD_MAP.get(period, timedelta(days=90))
         end = datetime.now()

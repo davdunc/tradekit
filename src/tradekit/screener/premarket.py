@@ -46,9 +46,7 @@ def scan_premarket(
     # Step 1: Get initial candidates from Finviz
     finviz = FinvizProvider()
     logger.info("Fetching top gainers from Finviz...")
-    finviz_df = finviz.get_top_gainers(
-        min_price=filter_config.get("min_price", settings.screener.min_price)
-    )
+    finviz_df = finviz.get_top_gainers(min_price=filter_config.get("min_price", settings.screener.min_price))
 
     # Extract tickers from Finviz results
     tickers: list[str] = []
@@ -143,17 +141,19 @@ def scan_previous_movers(
             # Get pre-market data for continuation signal
             pre = provider.get_premarket(ticker)
 
-            rows.append({
-                "ticker": ticker,
-                "name": quote.get("name", ticker),
-                "price": price,
-                "prev_close": prev_close,
-                "prev_change_pct": round(change_pct, 2),
-                "volume_ratio": round(vol_ratio, 2),
-                "pre_price": pre.get("pre_price", 0),
-                "pre_gap_pct": pre.get("gap_pct", 0),
-                "has_premarket": pre.get("has_premarket", False),
-            })
+            rows.append(
+                {
+                    "ticker": ticker,
+                    "name": quote.get("name", ticker),
+                    "price": price,
+                    "prev_close": prev_close,
+                    "prev_change_pct": round(change_pct, 2),
+                    "volume_ratio": round(vol_ratio, 2),
+                    "pre_price": pre.get("pre_price", 0),
+                    "pre_gap_pct": pre.get("gap_pct", 0),
+                    "has_premarket": pre.get("has_premarket", False),
+                }
+            )
         except Exception as e:
             logger.warning("Failed to fetch %s: %s", ticker, e)
 
