@@ -1,0 +1,66 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+wheels/
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# uv
+.uv-cache/
+
+# Testing / coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+coverage.xml
+*.cover
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment & secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+*.pem
+*.key
+
+# Tradekit runtime
+~/.tradekit/
+.tradekit/
+cache/
+*.log
+
+# User config (keep examples)
+config/watchlists.yaml
+!config/watchlists.yaml.example
+
+# OS
+Thumbs.db
+.Spotlight-V100
+.Trashes

@@ -1,0 +1,79 @@
+[project]
+name = "tradekit"
+version = "0.1.0"
+description = "Personal trading infrastructure for pre-market screening, technical analysis, and trade setup evaluation"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "David Duncan", email = "davdunc@davidduncan.org" }
+]
+requires-python = ">=3.14"
+keywords = ["trading", "intraday", "screener", "technical-analysis", "pai"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Office/Business :: Financial :: Investment",
+]
+
+[project.urls]
+Homepage = "https://github.com/davdunc/tradekit"
+Repository = "https://github.com/davdunc/tradekit"
+Issues = "https://github.com/davdunc/tradekit/issues"
+"PAI Upstream" = "https://github.com/danielmiessler/Personal_AI_Infrastructure"
+dependencies = [
+    # Data acquisition
+    "yfinance>=1.0",
+    "finvizfinance>=1.3",
+    "requests",
+    "beautifulsoup4",
+    "aiohttp",
+    # Analysis
+    "pandas>=2.0",
+    "numpy",
+    "ta>=0.11",
+    # Config and CLI
+    "pydantic-settings>=2.0",
+    "pyyaml",
+    "click",
+    "rich",
+    "python-dotenv",
+    # MCP client
+    "mcp>=1.0",
+    # Storage
+    "pyarrow",
+    # S3-compatible object storage (backtest flat files)
+    "boto3",
+]
+
+[project.scripts]
+tradekit = "tradekit.cli:cli"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff",
+    "mypy",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.mypy]
+python_version = "3.14"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
