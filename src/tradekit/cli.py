@@ -1226,7 +1226,11 @@ def init(env_file: Path | None, non_interactive: bool):
 
     pai_dir = os.environ.get("PAI_DIR")
     if pai_dir:
-        console.print(f"  Detected PAI_DIR: [green]{pai_dir}[/green]")
+        expanded = Path(os.path.expandvars(pai_dir)).expanduser()
+        if str(expanded) != pai_dir:
+            console.print(f"  Detected PAI_DIR: [green]{pai_dir}[/green] → [cyan]{expanded}[/cyan]")
+        else:
+            console.print(f"  Detected PAI_DIR: [green]{pai_dir}[/green]")
     elif (Path.home() / ".claude").exists():
         console.print("  Detected Claude Code directory: [green]~/.claude[/green]")
     else:

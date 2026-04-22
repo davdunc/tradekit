@@ -18,11 +18,6 @@ classifiers = [
     "Topic :: Office/Business :: Financial :: Investment",
 ]
 
-[project.urls]
-Homepage = "https://github.com/davdunc/tradekit"
-Repository = "https://github.com/davdunc/tradekit"
-Issues = "https://github.com/davdunc/tradekit/issues"
-"PAI Upstream" = "https://github.com/danielmiessler/Personal_AI_Infrastructure"
 dependencies = [
     # Data acquisition
     "yfinance>=1.0",
@@ -47,6 +42,12 @@ dependencies = [
     # S3-compatible object storage (backtest flat files)
     "boto3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/davdunc/tradekit"
+Repository = "https://github.com/davdunc/tradekit"
+Issues = "https://github.com/davdunc/tradekit/issues"
+"PAI Upstream" = "https://github.com/danielmiessler/Personal_AI_Infrastructure"
 
 [project.scripts]
 tradekit = "tradekit.cli:cli"

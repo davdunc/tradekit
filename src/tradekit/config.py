@@ -46,7 +46,7 @@ def _resolve_env_files() -> list[str]:
     ]
     pai_dir = os.environ.get("PAI_DIR")
     if pai_dir:
-        candidates.append(Path(pai_dir).expanduser() / ".env")
+        candidates.append(Path(os.path.expandvars(pai_dir)).expanduser() / ".env")
     seen: set[str] = set()
     ordered: list[str] = []
     for p in candidates:
@@ -67,7 +67,7 @@ def shared_env_path() -> Path:
     """
     pai_dir = os.environ.get("PAI_DIR")
     if pai_dir:
-        return Path(pai_dir).expanduser() / ".env"
+        return Path(os.path.expandvars(pai_dir)).expanduser() / ".env"
     claude_dir = Path.home() / ".claude"
     if claude_dir.exists():
         return claude_dir / ".env"
