@@ -1,0 +1,43 @@
+# tradekit defaults — copy to ~/.config/tradekit/tradekit.conf or
+# /etc/tradekit/tradekit.conf to override.
+#
+# tradekit reads configuration from (in priority order):
+#   1. command-line flags
+#   2. environment variables (TRADEKIT_*)
+#   3. ~/.config/tradekit/tradekit.conf
+#   4. /etc/tradekit/tradekit.conf
+#   5. built-in defaults
+
+# ─── Data sources ─────────────────────────────────────────────────────────────
+
+# Default provider for `tradekit analyze`, `levels`, `morning`, `report`, etc.
+# One of: yahoo (default), massive, finviz, backtest
+# data_source = yahoo
+
+# Where local market_data files (debates/, risk_metrics_*.json, etc.) live.
+# data_dir = ~/market_data
+
+# ─── API keys (read from env to keep secrets out of files) ────────────────────
+# These are NOT set here. Put them in ~/.env or your shell profile:
+#
+#   FINVIZ_AUTH_TOKEN=your-elite-token-here
+#   MASSIVE_API_KEY=your-massive-key-here
+#   POLYGON_API_KEY=your-polygon-key-here   # alias for MASSIVE_API_KEY
+#
+# When FINVIZ_AUTH_TOKEN is unset, tradekit's Finviz integration falls back to
+# the public-site scraper (vendored finvizfinance). Some columns (incl.
+# After-Hours close/change, Performance (Week)) are unavailable in fallback mode.
+
+# ─── LLM debate defaults ──────────────────────────────────────────────────────
+
+# Inference tier for `tradekit debate` and `weekly-review --with-debates N`.
+# One of: fast (haiku), standard (sonnet), smart (opus). Default: standard.
+# debate_level = standard
+
+# Where bull/bear/judge transcripts persist for replay scoring.
+# debate_dir = ~/market_data/debates
+
+# ─── Falcon screener integration ──────────────────────────────────────────────
+
+# Path to the Falcon screener SQLite DB (~/Projects/falcon writes here).
+# falcon_db = ~/.falcon/falcon.db

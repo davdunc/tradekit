@@ -1,0 +1,14 @@
+[Unit]
+Description=tradekit daily groups snapshot (sector/industry/country rotation)
+Documentation=https://github.com/davdunc/tradekit
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/tradekit groups --group all --diff auto
+# Keep the snapshot history bounded — let the user prune via cron if desired
+Nice=10
+
+[Install]
+WantedBy=default.target

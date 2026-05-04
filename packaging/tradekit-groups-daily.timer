@@ -1,0 +1,14 @@
+[Unit]
+Description=Run tradekit groups snapshot daily after US market close
+Documentation=https://github.com/davdunc/tradekit
+
+[Timer]
+# 17:30 ET = 22:30 UTC during EST, 21:30 UTC during EDT.
+# Pick 22:45 UTC as a fixed time that runs ~30-90 min after the closing bell
+# year-round (later in winter, earlier in summer — both fine for end-of-day data).
+OnCalendar=*-*-* 22:45:00 UTC
+Persistent=true
+RandomizedDelaySec=15min
+
+[Install]
+WantedBy=timers.target
