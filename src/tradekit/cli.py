@@ -15,9 +15,9 @@ logger = logging.getLogger("tradekit")
 
 source_option = click.option(
     "--source",
-    type=click.Choice(["yahoo", "massive", "backtest"], case_sensitive=False),
+    type=click.Choice(["yahoo", "massive", "finviz", "backtest"], case_sensitive=False),
     default=None,
-    help="Data source: yahoo (default), massive, or backtest.",
+    help="Data source: yahoo (default), massive, finviz, or backtest.",
 )
 
 
@@ -29,6 +29,10 @@ def get_provider(source: str | None = None):
         from tradekit.data.massive import MassiveProvider
 
         return MassiveProvider()
+    elif source == "finviz":
+        from tradekit.data.finviz_elite import FinvizEliteProvider
+
+        return FinvizEliteProvider()
     elif source == "backtest":
         from tradekit.data.backtest import BacktestProvider
 
@@ -1436,3 +1440,705 @@ def init(env_file: Path | None, non_interactive: bool):
     _upsert_env_file(target, updates)
     console.print(f"\n[bold green]✓ Wrote {len(updates)} key(s) to {target}[/bold green]")
     console.print("[dim]Restart any running tradekit processes to pick up the new values.[/dim]")
+
+
+@cli.command()
+@click.option("--group", "group_type", type=click.Choice(["sector", "industry", "country", "all"]),
+              default="all", help="Which group(s) to pull.")
+@click.option("--top", default=12, help="Top/bottom N for industry leaders/laggards.")
+@click.option("--push-notion", is_flag=True, help="Mirror summary to Notion TeamJaDaDa hub.")
+@click.option("--save", is_flag=True, default=True, help="Save full data to ~/market_data/groups_<DATE>.json.")
+@click.option("--diff", "diff_against", default=None, metavar="DATE_OR_AUTO",
+              help="Compare today vs prior snapshot. Pass 'auto' for most-recent prior file, or YYYY-MM-DD.")
+@click.option("--diff-metric", default="perf_w", help="Metric to diff: perf_w, perf_m, perf_q, perf_ytd.")
+def groups(group_type: str, top: int, push_notion: bool, save: bool,
+           diff_against: str | None, diff_metric: str):
+    """Pull Finviz Elite group performance — sector/industry/country rotation snapshot.
+
+    Sector view shows 11 GICS-style sectors. Industry view has ~144 sub-industries.
+    Country view shows international rotation. All include weekly/monthly/quarterly/YTD
+    performance with relative volume — perfect weekly-review input.
+    """
+    import json
+    from datetime import datetime
+    from pathlib import Path
+
+    from tradekit.data.finviz_elite import FinvizEliteProvider
+
+    fp = FinvizEliteProvider()
+    targets = ["sector", "industry", "country"] if group_type == "all" else [group_type]
+    out: dict[str, list[dict]] = {}
+
+    for g in targets:
+        console.print(f"[bold]Fetching {g} groups...[/bold]")
+        df = fp.get_group(g)
+        out[g] = df.to_dict("records")
+
+        if g == "sector":
+            console.print(f"\n[bold cyan]SECTORS — ranked by weekly performance[/bold cyan]")
+            ranked = df.sort_values("perf_w", ascending=False)
+            for r in ranked.itertuples():
+                style = "green" if r.perf_w > 0 else "red"
+                console.print(
+                    f"  [{style}]{r.perf_w:>+7.2f}%[/{style}] "
+                    f"W   {r.perf_m:>+6.2f}% M   {r.perf_q:>+6.2f}% Q   {r.perf_ytd:>+7.2f}% YTD   "
+                    f"RVol {r.rvol:.2f}   {r.name} ({r.stocks} stocks)"
+                )
+
+        elif g == "industry":
+            console.print(f"\n[bold green]TOP {top} INDUSTRIES — by weekly performance[/bold green]")
+            top_df = df.sort_values("perf_w", ascending=False).head(top)
+            for r in top_df.itertuples():
+                console.print(
+                    f"  [green]{r.perf_w:>+7.2f}%[/green] W   "
+                    f"{r.perf_m:>+6.2f}% M   {r.perf_ytd:>+7.2f}% YTD   "
+                    f"RVol {r.rvol:.2f}   {r.name} (#{r.stocks})"
+                )
+            console.print(f"\n[bold red]BOTTOM {top} INDUSTRIES — by weekly performance[/bold red]")
+            bot_df = df.sort_values("perf_w", ascending=True).head(top)
+            for r in bot_df.itertuples():
+                console.print(
+                    f"  [red]{r.perf_w:>+7.2f}%[/red] W   "
+                    f"{r.perf_m:>+6.2f}% M   {r.perf_ytd:>+7.2f}% YTD   "
+                    f"RVol {r.rvol:.2f}   {r.name} (#{r.stocks})"
+                )
+
+        elif g == "country":
+            console.print(f"\n[bold cyan]COUNTRIES — top 10 by weekly[/bold cyan]")
+            for r in df.sort_values("perf_w", ascending=False).head(10).itertuples():
+                style = "green" if r.perf_w > 0 else "red"
+                console.print(
+                    f"  [{style}]{r.perf_w:>+7.2f}%[/{style}] W   "
+                    f"{r.perf_m:>+6.2f}% M   {r.perf_ytd:>+7.2f}% YTD   "
+                    f"{r.name} ({r.stocks} stocks)"
+                )
+
+    # Save snapshot
+    today_iso = datetime.now().strftime("%Y-%m-%d")
+    if save:
+        out_path = Path.home() / "market_data" / f"groups_{today_iso}.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(out, indent=2, default=str))
+        console.print(f"\n[dim]Saved: {out_path}[/dim]")
+
+    # Diff against a prior snapshot
+    if diff_against:
+        from tradekit.data.finviz_elite import diff_groups
+
+        market_data = Path.home() / "market_data"
+        if diff_against == "auto":
+            files = sorted(market_data.glob("groups_*.json"))
+            files = [f for f in files if today_iso not in f.name]
+            if not files:
+                console.print("[yellow]No prior snapshots found for --diff auto[/yellow]")
+            else:
+                prior_path = files[-1]
+                console.print(f"\n[bold magenta]DIFF vs {prior_path.name}[/bold magenta]")
+                prior = json.loads(prior_path.read_text())
+                _print_diff(out, prior, diff_metric, top)
+        else:
+            prior_path = market_data / f"groups_{diff_against}.json"
+            if not prior_path.exists():
+                console.print(f"[yellow]No snapshot at {prior_path}[/yellow]")
+            else:
+                console.print(f"\n[bold magenta]DIFF vs {prior_path.name}[/bold magenta]")
+                prior = json.loads(prior_path.read_text())
+                _print_diff(out, prior, diff_metric, top)
+
+    # Notion push
+    if push_notion:
+        try:
+            _push_groups_to_notion(out)
+            console.print("[green]Pushed to Notion ✓[/green]")
+        except Exception as e:
+            console.print(f"[yellow]Notion push failed: {e}[/yellow]")
+
+
+def _push_groups_to_notion(data: dict[str, list[dict]]) -> None:
+    """Build a markdown summary and push to the TeamJaDaDa Document Hub."""
+    from datetime import datetime
+    import subprocess
+    import json as _json
+
+    date = datetime.now().strftime("%Y-%m-%d")
+    lines = [f"# Group Rotation Snapshot — {date}\n"]
+
+    if "sector" in data:
+        lines.append("## Sectors (ranked weekly)\n")
+        lines.append("| Sector | Week | Month | Quarter | YTD | RVol | # |")
+        lines.append("|--------|------|-------|---------|-----|------|---|")
+        for r in sorted(data["sector"], key=lambda x: -x["perf_w"]):
+            lines.append(
+                f"| {r['name']} | {r['perf_w']:+.2f}% | {r['perf_m']:+.2f}% | {r['perf_q']:+.2f}% | "
+                f"{r['perf_ytd']:+.2f}% | {r['rvol']:.2f} | {r['stocks']} |"
+            )
+        lines.append("")
+
+    if "industry" in data:
+        lines.append("## Top 12 Industries (weekly)\n")
+        lines.append("| Industry | Week | Month | YTD | RVol | # |")
+        lines.append("|----------|------|-------|-----|------|---|")
+        for r in sorted(data["industry"], key=lambda x: -x["perf_w"])[:12]:
+            lines.append(
+                f"| {r['name']} | {r['perf_w']:+.2f}% | {r['perf_m']:+.2f}% | "
+                f"{r['perf_ytd']:+.2f}% | {r['rvol']:.2f} | {r['stocks']} |"
+            )
+        lines.append("\n## Bottom 12 Industries (weekly)\n")
+        lines.append("| Industry | Week | Month | YTD | RVol | # |")
+        lines.append("|----------|------|-------|-----|------|---|")
+        for r in sorted(data["industry"], key=lambda x: x["perf_w"])[:12]:
+            lines.append(
+                f"| {r['name']} | {r['perf_w']:+.2f}% | {r['perf_m']:+.2f}% | "
+                f"{r['perf_ytd']:+.2f}% | {r['rvol']:.2f} | {r['stocks']} |"
+            )
+
+    content = "\n".join(lines)
+
+    # Use the Notion MCP via Claude CLI (parent has the auth)
+    cmd = [
+        "claude", "--print", "--model", "haiku",
+        "--allowed-tools", "mcp__claude_ai_Notion__notion-create-pages",
+        "--system-prompt", (
+            "You have access to the Notion MCP. Create ONE page in the TeamJaDaDa Document Hub "
+            "(data_source_id: 2d0973b9-8fae-80f1-860c-000b23ffd54e) with the markdown content "
+            "from the user. Properties: 'Doc name' = the H1 from the markdown, 'Document Type' = 'Watchlist', "
+            "'date:Date:start' = today's ISO date. Reply with just the page URL on success."
+        ),
+    ]
+    subprocess.run(cmd, input=content, text=True, timeout=60)
+
+
+@cli.command("weekly-review")
+@click.option("--tickers", default="", help="Comma-separated watchlist tickers (e.g. 'AAPL,MSFT,NVDA').")
+@click.option("--tickers-file", type=click.Path(exists=True),
+              help="Path to a newline-delimited ticker file.")
+@click.option("--from-falcon", is_flag=True, default=False,
+              help="Pull tickers from the Falcon screener DB (~/.falcon/falcon.db).")
+@click.option("--falcon-strategy", default=None,
+              help="Filter Falcon DB by strategy name (e.g. 'momentum_long'). Default: all strategies.")
+@click.option("--falcon-mode", type=click.Choice(["top", "recent"]), default="top",
+              help="Falcon source: 'top' = most-frequent symbols over window, 'recent' = last N runs.")
+@click.option("--falcon-days", default=7, help="Lookback days for --falcon-mode top.")
+@click.option("--falcon-limit", default=20, help="Max symbols to pull from Falcon.")
+@click.option("--falcon-db", type=click.Path(), default=None,
+              help="Override path to falcon.db (default: ~/.falcon/falcon.db).")
+@click.option("--with-debates", "n_debates", default=0,
+              help="Run bull/bear debates on top-N tickers by |RS spread|. 0 = skip.")
+@click.option("--debate-level", type=click.Choice(["fast", "standard", "smart"]), default="fast",
+              help="Inference level for debates if --with-debates > 0.")
+@click.option("--out-dir", type=click.Path(),
+              default=None, help="Output dir (default: ~/.claude/MEMORY/WORK/<DATE>_weekly-review/).")
+@click.option("--push-notion", is_flag=True,
+              help="After generating, also push the markdown to Notion. Skip if you want to edit first.")
+def weekly_review(tickers: str, tickers_file: str | None,
+                  from_falcon: bool, falcon_strategy: str | None,
+                  falcon_mode: str, falcon_days: int, falcon_limit: int,
+                  falcon_db: str | None,
+                  n_debates: int,
+                  debate_level: str, out_dir: str | None, push_notion: bool):
+    """Generate the full weekly trading review as editable markdown.
+
+    Composes: sector/industry rotation (with W-over-W diff), watchlist RS spreads,
+    optional bull/bear debates on top RS leaders. Writes a single REVIEW.md to
+    ~/.claude/MEMORY/WORK/<DATE>_weekly-review/ — edit it freely, then re-run
+    with --push-notion (or use 'tradekit publish-review' separately).
+    """
+    import asyncio
+    import json
+    from datetime import datetime
+    from pathlib import Path
+
+    from tradekit.data.finviz_elite import FinvizEliteProvider, compute_rs_spread, diff_groups
+
+    # Resolve tickers — priority: --from-falcon > --tickers-file > --tickers > default
+    ticker_list: list[str] = []
+    ticker_source = "default"
+    if from_falcon:
+        from tradekit.data.falcon import FalconReader, FalconDBNotFound, DEFAULT_DB_PATH
+        try:
+            reader = FalconReader(db_path=Path(falcon_db) if falcon_db else DEFAULT_DB_PATH)
+            if falcon_mode == "top":
+                top = reader.get_top_symbols(
+                    strategy_name=falcon_strategy,
+                    days_back=falcon_days,
+                    limit=falcon_limit,
+                )
+                ticker_list = [sym for sym, _count in top]
+                console.print(
+                    f"[bold]Falcon: pulled {len(ticker_list)} top symbols "
+                    f"(strategy={falcon_strategy or 'all'}, last {falcon_days}d)[/bold]"
+                )
+                if top:
+                    counts_str = ", ".join(f"{s}({n})" for s, n in top[:10])
+                    console.print(f"  [dim]top frequency: {counts_str}[/dim]")
+            else:
+                ticker_list = reader.get_recent_run_symbols(
+                    strategy_name=falcon_strategy,
+                    n_runs=3,
+                    max_symbols=falcon_limit,
+                )
+                console.print(
+                    f"[bold]Falcon: pulled {len(ticker_list)} symbols "
+                    f"from last 3 runs (strategy={falcon_strategy or 'all'})[/bold]"
+                )
+            ticker_source = f"falcon ({falcon_mode})"
+        except FalconDBNotFound as e:
+            console.print(f"[red]{e}[/red]")
+            return
+        if not ticker_list:
+            console.print("[yellow]Falcon DB had no matching symbols. Falling back to defaults.[/yellow]")
+    if not ticker_list and tickers_file:
+        ticker_list = [t.strip().upper() for t in Path(tickers_file).read_text().splitlines() if t.strip()]
+        ticker_source = f"file:{tickers_file}"
+    if not ticker_list and tickers:
+        ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
+        ticker_source = "--tickers"
+    if not ticker_list:
+        ticker_list = ["AAPL", "MSFT", "NVDA", "AMD", "GOOGL", "META", "AMZN", "TSLA", "AVGO", "PLTR"]
+        console.print("[yellow]No tickers provided; using default mega-cap watchlist.[/yellow]")
+
+    today_iso = datetime.now().strftime("%Y-%m-%d")
+    out_path = Path(out_dir) if out_dir else (
+        Path.home() / ".claude" / "MEMORY" / "WORK" / f"{today_iso.replace('-', '')}_weekly-review"
+    )
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    console.print(f"[bold]Generating weekly review → {out_path}[/bold]")
+
+    # 1) Groups (sector + industry + country) + diff
+    fp = FinvizEliteProvider()
+    console.print("  [1/4] Fetching group rotation data...")
+    groups_data = {
+        "sector": fp.get_group("sector").to_dict("records"),
+        "industry": fp.get_group("industry").to_dict("records"),
+        "country": fp.get_group("country").to_dict("records"),
+    }
+    snap_path = Path.home() / "market_data" / f"groups_{today_iso}.json"
+    snap_path.parent.mkdir(parents=True, exist_ok=True)
+    snap_path.write_text(json.dumps(groups_data, indent=2, default=str))
+
+    market_data = Path.home() / "market_data"
+    prior_files = sorted([f for f in market_data.glob("groups_*.json") if today_iso not in f.name])
+    sector_diff: list[dict] = []
+    industry_diff: list[dict] = []
+    diff_label = ""
+    if prior_files:
+        prior_data = json.loads(prior_files[-1].read_text())
+        diff_label = prior_files[-1].stem.replace("groups_", "")
+        sector_diff = diff_groups(groups_data, prior_data, "sector", "perf_w", 99)
+        industry_diff = diff_groups(groups_data, prior_data, "industry", "perf_w", 99)
+
+    # 2) RS spread for watchlist
+    console.print(f"  [2/4] Computing RS spreads for {len(ticker_list)} tickers...")
+    quotes_df = fp.get_quotes(ticker_list, cols=[
+        "ticker", "company", "industry", "perf_w", "perf_m", "price",
+        "ah_close", "ah_change", "rsi", "atr",
+    ])
+    rs_df = compute_rs_spread(quotes_df, groups_data["industry"])
+
+    # 3) Optional debates on top RS movers
+    debates: list[dict] = []
+    if n_debates > 0 and not rs_df.empty:
+        from tradekit.agents.debate import bull_bear_debate
+
+        console.print(f"  [3/4] Running bull/bear debates on top {n_debates} RS movers ({debate_level})...")
+        top_rs = rs_df.head(n_debates)["ticker"].tolist()
+
+        def build_ctx(tk: str) -> dict | None:
+            try:
+                q = fp.get_quote(tk)
+                if not q:
+                    return None
+                hist = fp.get_history(tk, period="1mo")
+                recent = hist.tail(5).reset_index().to_dict("records") if not hist.empty else []
+                rs_row = rs_df[rs_df["ticker"] == tk].iloc[0]
+                return {
+                    "current_price": q.get("price"),
+                    "ah_price": q.get("ah_price"),
+                    "ah_change_pct": q.get("ah_change"),
+                    "industry": q.get("industry"),
+                    "ticker_perf_week": float(rs_row["ticker_w"]),
+                    "industry_perf_week": float(rs_row["industry_w"]),
+                    "rs_spread_pp": float(rs_row["rs_spread"]),
+                    "atr": q.get("atr"),
+                    "rsi": q.get("rsi"),
+                    "recent_5_bars": recent,
+                    "setup_note": "Weekly review RS-leader debate — high |spread| means idiosyncratic move not industry beta.",
+                }
+            except Exception as e:
+                console.print(f"    [yellow]ctx err for {tk}: {e}[/yellow]")
+                return None
+
+        async def run_all():
+            tasks = []
+            for tk in top_rs:
+                ctx = build_ctx(tk)
+                if ctx:
+                    tasks.append((tk, ctx, bull_bear_debate(tk, ctx, level=debate_level, persist=True)))
+            results = []
+            for tk, ctx, coro in tasks:
+                try:
+                    res = await coro
+                    results.append((tk, res))
+                except Exception as e:
+                    console.print(f"    [yellow]debate err {tk}: {e}[/yellow]")
+            return results
+
+        debate_results = asyncio.run(run_all())
+        for tk, res in debate_results:
+            j = res.judge
+            debates.append({
+                "ticker": tk,
+                "verdict": j.verdict if j else "ERR",
+                "confidence": j.confidence if j else 0.0,
+                "stronger": j.stronger_side if j else "n/a",
+                "rationale": j.rationale if j else (res.error or ""),
+                "key_levels": j.key_levels if j else {},
+                "bull_thesis": (res.bull.parsed or {}).get("thesis", "") if res.bull.parsed else "",
+                "bear_thesis": (res.bear.parsed or {}).get("thesis", "") if res.bear.parsed else "",
+            })
+
+    # 4) Render markdown
+    console.print("  [4/4] Rendering REVIEW.md...")
+    md = _render_review_md(today_iso, groups_data, sector_diff, industry_diff,
+                           diff_label, rs_df, debates)
+    review_path = out_path / "REVIEW.md"
+    review_path.write_text(md)
+    console.print(f"\n[bold green]✓ Review written to:[/bold green] {review_path}")
+    console.print(f"[dim]Edit freely, then run: tradekit publish-review {review_path}[/dim]")
+
+    if push_notion:
+        _publish_review_to_notion(md, today_iso)
+        console.print("[green]✓ Pushed to Notion[/green]")
+
+
+@cli.command("publish-review")
+@click.argument("review_path", type=click.Path(exists=True))
+def publish_review(review_path: str):
+    """Push an existing REVIEW.md (possibly edited) to Notion."""
+    from datetime import datetime
+    from pathlib import Path
+    md = Path(review_path).read_text()
+    today_iso = datetime.now().strftime("%Y-%m-%d")
+    _publish_review_to_notion(md, today_iso)
+    console.print(f"[green]✓ Published {review_path} to Notion[/green]")
+
+
+def _render_review_md(date_iso: str, groups_data: dict,
+                       sector_diff: list[dict], industry_diff: list[dict],
+                       diff_label: str,
+                       rs_df, debates: list[dict]) -> str:
+    """Pure markdown renderer — keep all formatting in one place so it's easy to tune."""
+    out: list[str] = []
+    out.append(f"# Weekly Trading Review — {date_iso}\n")
+    out.append("> Generated by `tradekit weekly-review`. Edit freely. Push with "
+               "`tradekit publish-review REVIEW.md` when ready.\n")
+    out.append("---\n")
+
+    # Headline read (you fill this in)
+    out.append("## Headline Read\n")
+    out.append("_TODO: 2-3 sentences capturing the week's tape. Edit before publishing._\n")
+    out.append("---\n")
+
+    # Sectors
+    out.append("## Sector Rotation\n")
+    out.append("| Sector | Week | Month | Quarter | YTD | RVol | # |")
+    out.append("|--------|-----:|------:|--------:|----:|-----:|--:|")
+    for r in sorted(groups_data["sector"], key=lambda x: -x["perf_w"]):
+        out.append(
+            f"| {r['name']} | {r['perf_w']:+.2f}% | {r['perf_m']:+.2f}% | "
+            f"{r['perf_q']:+.2f}% | {r['perf_ytd']:+.2f}% | {r['rvol']:.2f} | {r['stocks']} |"
+        )
+    out.append("")
+
+    if sector_diff:
+        out.append(f"### Sector W-over-W Δ (vs {diff_label})\n")
+        out.append("| Sector | Now | Was | Δpp |")
+        out.append("|--------|----:|----:|----:|")
+        for d in sector_diff:
+            arrow = "▲" if d["delta"] > 0 else "▼"
+            out.append(f"| {d['name']} | {d['today']:+.2f}% | {d['prior']:+.2f}% | {arrow} {d['delta']:+.2f} |")
+        out.append("")
+
+    out.append("---\n")
+
+    # Industries
+    out.append("## Industry Leaders & Laggards\n")
+    industries = sorted(groups_data["industry"], key=lambda x: -x["perf_w"])
+    out.append("### Top 12 (weekly)\n")
+    out.append("| Industry | Week | Month | YTD | RVol | # |")
+    out.append("|----------|-----:|------:|----:|-----:|--:|")
+    for r in industries[:12]:
+        out.append(
+            f"| {r['name']} | {r['perf_w']:+.2f}% | {r['perf_m']:+.2f}% | "
+            f"{r['perf_ytd']:+.2f}% | {r['rvol']:.2f} | {r['stocks']} |"
+        )
+    out.append("\n### Bottom 12 (weekly)\n")
+    out.append("| Industry | Week | Month | YTD | RVol | # |")
+    out.append("|----------|-----:|------:|----:|-----:|--:|")
+    for r in industries[-12:]:
+        out.append(
+            f"| {r['name']} | {r['perf_w']:+.2f}% | {r['perf_m']:+.2f}% | "
+            f"{r['perf_ytd']:+.2f}% | {r['rvol']:.2f} | {r['stocks']} |"
+        )
+    out.append("")
+
+    if industry_diff:
+        out.append(f"### Industry W-over-W movers (vs {diff_label})\n")
+        out.append("**Top improvers:**\n")
+        out.append("| Industry | Now | Was | Δpp |")
+        out.append("|----------|----:|----:|----:|")
+        for d in industry_diff[:8]:
+            out.append(f"| {d['name']} | {d['today']:+.2f}% | {d['prior']:+.2f}% | ▲ {d['delta']:+.2f} |")
+        out.append("\n**Top deteriorating:**\n")
+        out.append("| Industry | Now | Was | Δpp |")
+        out.append("|----------|----:|----:|----:|")
+        for d in industry_diff[-8:][::-1]:
+            out.append(f"| {d['name']} | {d['today']:+.2f}% | {d['prior']:+.2f}% | ▼ {d['delta']:+.2f} |")
+        out.append("")
+
+    out.append("---\n")
+
+    # Watchlist RS
+    if not rs_df.empty:
+        out.append("## Watchlist — Relative Strength Spread\n")
+        out.append("Spread = ticker weekly perf − industry weekly perf. "
+                   "**>+10pp = idiosyncratic strength**, **<-10pp = idiosyncratic weakness**.\n")
+        out.append("| Ticker | Industry | Tkr W | Ind W | Spread |")
+        out.append("|--------|----------|------:|------:|-------:|")
+        for r in rs_df.itertuples():
+            out.append(
+                f"| {r.ticker} | {r.industry} | {r.ticker_w:+.2f}% | "
+                f"{r.industry_w:+.2f}% | **{r.rs_spread:+.2f}pp** |"
+            )
+        out.append("")
+        out.append("---\n")
+
+    # Debates
+    if debates:
+        out.append("## Bull/Bear Debates — Top RS Leaders\n")
+        for d in debates:
+            badge = {"long": "🟢", "short": "🔴", "skip": "⚪", "ERR": "❌"}.get(d["verdict"], "⚪")
+            out.append(f"### {badge} {d['ticker']} — {d['verdict'].upper()} (conf {d['confidence']:.2f}, stronger {d['stronger']})\n")
+            out.append(f"**Bull:** {d['bull_thesis']}\n")
+            out.append(f"**Bear:** {d['bear_thesis']}\n")
+            out.append(f"**Judge:** {d['rationale']}\n")
+            kl = d.get("key_levels") or {}
+            if any(kl.values()):
+                out.append(f"**Levels:** entry {kl.get('entry')} / stop {kl.get('stop')} / target {kl.get('target')}\n")
+            out.append("")
+        out.append("---\n")
+
+    # Action plan placeholder
+    out.append("## Action Plan for Monday\n")
+    out.append("_TODO: distill the above into 3-5 actionable bullets. Edit freely._\n\n")
+    out.append("- \n- \n- \n")
+    out.append("\n---\n")
+    out.append("## Risk-Off Triggers\n")
+    out.append("_TODO: SPY breakdown level, VIX threshold, NFP miss, etc._\n")
+
+    return "\n".join(out)
+
+
+def _publish_review_to_notion(md: str, date_iso: str) -> None:
+    """Push markdown to TeamJaDaDa Document Hub via the Notion MCP."""
+    import subprocess
+    cmd = [
+        "claude", "--print", "--model", "haiku",
+        "--allowed-tools", "mcp__claude_ai_Notion__notion-create-pages",
+        "--system-prompt", (
+            "You have access to the Notion MCP. Create ONE page in the TeamJaDaDa Document Hub "
+            "(data_source_id: 2d0973b9-8fae-80f1-860c-000b23ffd54e). Use the H1 from the markdown "
+            "as 'Doc name', set 'Document Type' = 'Watchlist', set 'date:Date:start' to today's "
+            "ISO date. Reply with the page URL."
+        ),
+    ]
+    subprocess.run(cmd, input=md, text=True, timeout=90)
+
+
+def _print_diff(today: dict, prior: dict, metric: str, top_n: int) -> None:
+    """Print W-over-W deltas for sectors and industries."""
+    from tradekit.data.finviz_elite import diff_groups
+    label = {"perf_w": "Week", "perf_m": "Month", "perf_q": "Quarter", "perf_ytd": "YTD"}.get(metric, metric)
+
+    if "sector" in today and "sector" in prior:
+        console.print(f"\n[bold green]SECTOR {label}-perf improvement (today vs prior)[/bold green]")
+        deltas = diff_groups(today, prior, "sector", metric, top_n)
+        for d in deltas:
+            arrow = "▲" if d["delta"] > 0 else "▼"
+            style = "green" if d["delta"] > 0 else "red"
+            console.print(
+                f"  [{style}]{arrow} {d['delta']:>+6.2f}pp[/{style}]   "
+                f"{d['name']:<25} now {d['today']:>+6.2f}%  was {d['prior']:>+6.2f}%"
+            )
+    if "industry" in today and "industry" in prior:
+        deltas = diff_groups(today, prior, "industry", metric, top_n)
+        console.print(f"\n[bold green]TOP {top_n} INDUSTRY {label}-perf IMPROVERS[/bold green]")
+        for d in deltas[:top_n]:
+            console.print(
+                f"  [green]▲ {d['delta']:>+6.2f}pp[/green]   "
+                f"{d['name']:<42} now {d['today']:>+6.2f}%  was {d['prior']:>+6.2f}%"
+            )
+        console.print(f"\n[bold red]TOP {top_n} INDUSTRY {label}-perf DETERIORATING[/bold red]")
+        for d in deltas[-top_n:][::-1]:
+            console.print(
+                f"  [red]▼ {d['delta']:>+6.2f}pp[/red]   "
+                f"{d['name']:<42} now {d['today']:>+6.2f}%  was {d['prior']:>+6.2f}%"
+            )
+
+
+@cli.command()
+@click.argument("tickers", nargs=-1, required=True)
+@click.option("--top", default=20, help="Show top N by absolute spread.")
+def rs(tickers: tuple[str, ...], top: int):
+    """Compute relative-strength spread for tickers vs their industry's weekly perf.
+
+    A high positive spread = ticker is leading its industry (idiosyncratic strength).
+    A high negative spread = ticker is dragging its industry (idiosyncratic weakness).
+    Both are signal — high-conviction trades happen at the extremes.
+
+    Uses today's industry snapshot (live-fetches if missing).
+    """
+    import json
+    from datetime import datetime
+    from pathlib import Path
+
+    from tradekit.data.finviz_elite import FinvizEliteProvider, compute_rs_spread
+
+    fp = FinvizEliteProvider()
+
+    # Get today's industry snapshot (cached or live)
+    today_iso = datetime.now().strftime("%Y-%m-%d")
+    snap_path = Path.home() / "market_data" / f"groups_{today_iso}.json"
+    if snap_path.exists():
+        groups_data = json.loads(snap_path.read_text())
+        if "industry" not in groups_data:
+            console.print("[bold]Cached snapshot missing industry, fetching...[/bold]")
+            groups_data["industry"] = fp.get_group("industry").to_dict("records")
+    else:
+        console.print("[bold]Fetching industry snapshot...[/bold]")
+        groups_data = {"industry": fp.get_group("industry").to_dict("records")}
+
+    console.print(f"[bold]Pulling quotes for {len(tickers)} tickers...[/bold]")
+    quotes_df = fp.get_quotes(list(tickers), cols=[
+        "ticker", "company", "industry", "perf_w", "price", "ah_close", "ah_change",
+    ])
+
+    rs_df = compute_rs_spread(quotes_df, groups_data["industry"])
+    if rs_df.empty:
+        console.print("[red]No RS data computed — check ticker symbols[/red]")
+        return
+
+    console.print(f"\n[bold cyan]RELATIVE STRENGTH SPREAD — week, ranked by |spread|[/bold cyan]")
+    console.print(f"  {'TICKER':<7}{'INDUSTRY':<42}{'TKR_W':>9}{'IND_W':>9}{'SPREAD':>10}")
+    console.print("  " + "-" * 77)
+    for r in rs_df.head(top).itertuples():
+        style = "green" if r.rs_spread > 0 else "red"
+        console.print(
+            f"  {r.ticker:<7}{r.industry[:40]:<42}"
+            f"[{style}]{r.ticker_w:>+8.2f}%[/{style}]"
+            f"{r.industry_w:>+8.2f}%"
+            f"[bold {style}]{r.rs_spread:>+9.2f}pp[/bold {style}]"
+        )
+
+    console.print(f"\n[dim]Tip: spread > +10pp = idiosyncratic strength | spread < -10pp = idiosyncratic weakness[/dim]")
+
+
+@cli.command()
+@click.argument("ticker")
+@click.option("--period", default="1mo", help="History period for context.")
+@click.option("--level", type=click.Choice(["fast", "standard", "smart"]), default="standard",
+              help="Inference level: fast=haiku, standard=sonnet, smart=opus.")
+@click.option("--no-persist", is_flag=True, help="Skip writing transcript to disk.")
+@source_option
+def debate(ticker: str, period: str, level: str, no_persist: bool, source: str | None):
+    """Run a bull/bear LLM debate on a ticker — TradingAgents-style decision layer.
+
+    Fetches real context (price, ATR, RVOL, levels, recent OHLC) from the configured
+    data provider, then runs parallel bull/bear analyst agents and a judge agent.
+    Persists full transcript to ~/market_data/debates/ unless --no-persist.
+    """
+    import asyncio
+
+    from tradekit.agents.debate import bull_bear_debate
+    from tradekit.analysis.indicators import compute_all_indicators
+    from tradekit.analysis.levels import find_support_resistance, get_nearest_levels
+    from tradekit.analysis.volume import add_volume_indicators
+
+    settings = get_settings()
+    presets = settings.load_indicator_presets()
+    provider = get_provider(source)
+    ticker = ticker.upper()
+
+    console.print(f"[bold]Building context for {ticker}...[/bold]")
+    quote = provider.get_quote(ticker)
+    df = provider.get_history(ticker, period=period)
+    if df.empty:
+        console.print(f"[red]No data for {ticker}[/red]")
+        return
+
+    df = compute_all_indicators(df, presets=presets)
+    df = add_volume_indicators(df)
+    latest = df.iloc[-1]
+    sr_levels = find_support_resistance(df)
+    current_price = quote.get("price", float(latest.get("close", 0)))
+    nearest = get_nearest_levels(current_price, sr_levels)
+
+    recent_bars = df.tail(5)[["open", "high", "low", "close", "volume"]].to_dict("records")
+
+    context = {
+        "current_price": current_price,
+        "session": _market_session(),
+        "atr_14": float(latest.get("atr") or 0),
+        "atr_pct": float(latest.get("atr_pct") or 0),
+        "rvol": float(latest.get("relative_volume") or 0),
+        "vwap": float(latest.get("vwap") or 0),
+        "rsi_14": float(latest.get("rsi") or 0),
+        "macd_histogram": float(latest.get("macd_histogram") or 0),
+        "stoch_k": float(latest.get("stoch_k") or 0),
+        "nearest_support": nearest.get("support"),
+        "nearest_resistance": nearest.get("resistance"),
+        "recent_5_bars": recent_bars,
+        "premarket": provider.get_premarket(ticker) if hasattr(provider, "get_premarket") else None,
+    }
+
+    console.print(f"[bold]Running bull/bear debate ({level})...[/bold]")
+    result = asyncio.run(bull_bear_debate(ticker, context, level=level, persist=not no_persist))
+
+    if result.error:
+        console.print(f"[red]Debate failed: {result.error}[/red]")
+        if result.bull.parsed:
+            console.print(f"[yellow]Bull case (raw):[/yellow] {result.bull.parsed}")
+        if result.bear.parsed:
+            console.print(f"[yellow]Bear case (raw):[/yellow] {result.bear.parsed}")
+        return
+
+    bull_p = result.bull.parsed or {}
+    bear_p = result.bear.parsed or {}
+    j = result.judge
+
+    console.print()
+    console.print(f"[bold green]BULL ({result.bull.latency_ms}ms, conviction {bull_p.get('conviction', 'n/a')}):[/bold green]")
+    console.print(f"  Thesis: {bull_p.get('thesis', '')}")
+    for e in bull_p.get("evidence", []):
+        console.print(f"  - {e}")
+    console.print(f"  Invalidation: {bull_p.get('invalidation', '')}")
+
+    console.print()
+    console.print(f"[bold red]BEAR ({result.bear.latency_ms}ms, conviction {bear_p.get('conviction', 'n/a')}):[/bold red]")
+    console.print(f"  Thesis: {bear_p.get('thesis', '')}")
+    for e in bear_p.get("evidence", []):
+        console.print(f"  - {e}")
+    console.print(f"  Invalidation: {bear_p.get('invalidation', '')}")
+
+    if j:
+        console.print()
+        verdict_style = {"long": "bold green", "short": "bold red", "skip": "yellow"}.get(j.verdict, "white")
+        console.print(f"[{verdict_style}]VERDICT: {j.verdict.upper()}  (confidence {j.confidence:.2f}, stronger side: {j.stronger_side})[/{verdict_style}]")
+        console.print(f"  Rationale: {j.rationale}")
+        kl = j.key_levels or {}
+        console.print(f"  Entry {kl.get('entry')}  /  Stop {kl.get('stop')}  /  Target {kl.get('target')}")
+        console.print(f"  [dim]judge latency {j.latency_ms}ms[/dim]")
+
+    if not no_persist:
+        console.print(f"\n[dim]Transcript saved to ~/market_data/debates/[/dim]")
