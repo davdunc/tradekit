@@ -138,7 +138,8 @@ class TestScoring:
         result = compute_composite_score(row)
         assert "total" in result
         assert "grade" in result
-        assert result["grade"] in ("A", "B", "C", "F")
+        # Canonical five-rung ladder shared with trade grading (includes D).
+        assert result["grade"] in ("A", "B", "C", "D", "F")
 
 
 class TestVolume:

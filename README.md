@@ -23,6 +23,10 @@ or as the data engine for a [Personal_AI_Infrastructure (PAI)][pai] pack.
 - **News + catalysts** — Finviz Elite integration for market-moving stories
 - **Watchlists** — YAML-configured named watchlists
 - **Reports** — terminal, markdown, and Slack/email alert outputs
+- **Canonical report cards** — one grade ladder, R-units, and a fixed discipline
+  rubric across game plan and review, persisted as document-oriented records
+  (NoSQL-native, object-storage-archivable) so results are comparable day over
+  day. See `tradekit cards --help` and `tradekit.reporting`.
 
 ---
 

@@ -2142,3 +2142,82 @@ def debate(ticker: str, period: str, level: str, no_persist: bool, source: str |
 
     if not no_persist:
         console.print(f"\n[dim]Transcript saved to ~/market_data/debates/[/dim]")
+
+
+@cli.group()
+def cards():
+    """Canonical report-card store — persisted, comparable trading results.
+
+    Reads structured report documents written by the reporting layer (game
+    plans + daily cards) so day-over-day comparison comes from records, not
+    re-parsed prose. The store layout mirrors object storage and maps onto
+    DynamoDB, so the same records archive and query unchanged.
+    """
+
+
+def _report_store(store_root: str | None):
+    from tradekit.reporting import FileReportStore
+
+    return FileReportStore(root=Path(store_root) if store_root else None)
+
+
+@cards.command("trend")
+@click.option("--since", default=None, help="Inclusive start date (YYYY-MM-DD).")
+@click.option("--until", default=None, help="Inclusive end date (YYYY-MM-DD).")
+@click.option("--store-root", default=None, help="Report store root (default ~/.tradekit/reports).")
+def report_trend(since: str | None, until: str | None, store_root: str | None):
+    """Render the canonical multi-day trend table from persisted daily cards."""
+    from tradekit.reporting import multi_day_trend, render_multi_day_trend
+
+    store = _report_store(store_root)
+    items = store.query("DAILYCARD", since=since, until=until)
+    if not items:
+        console.print("[yellow]No daily cards found in store.[/yellow]")
+        return
+    rows = multi_day_trend(items)
+    console.print(render_multi_day_trend(rows))
+
+
+@cards.command("weekly")
+@click.option("--since", default=None, help="Inclusive start date (YYYY-MM-DD).")
+@click.option("--until", default=None, help="Inclusive end date (YYYY-MM-DD).")
+@click.option("--store-root", default=None, help="Report store root (default ~/.tradekit/reports).")
+def report_weekly(since: str | None, until: str | None, store_root: str | None):
+    """Aggregate persisted daily cards into the weekly rollup."""
+    from tradekit.reporting import multi_day_trend, render_weekly, weekly_rollup
+
+    store = _report_store(store_root)
+    items = store.query("DAILYCARD", since=since, until=until)
+    if not items:
+        console.print("[yellow]No daily cards found in store.[/yellow]")
+        return
+    console.print(render_weekly(weekly_rollup(items), multi_day_trend(items)))
+
+
+@cards.command("show")
+@click.argument("date")
+@click.option("--store-root", default=None, help="Report store root (default ~/.tradekit/reports).")
+def report_show(date: str, store_root: str | None):
+    """Render a single persisted daily report card by DATE (YYYY-MM-DD)."""
+    from tradekit.reporting import DailyReportCard, render_daily_card
+
+    store = _report_store(store_root)
+    item = store.get("DAILYCARD", date)
+    if item is None:
+        console.print(f"[yellow]No daily card for {date}.[/yellow]")
+        return
+    console.print(render_daily_card(DailyReportCard.from_item(item)))
+
+
+@cards.command("export")
+@click.option(
+    "--record-type",
+    type=click.Choice(["DAILYCARD", "GAMEPLAN"]),
+    default="DAILYCARD",
+    help="Document type to export.",
+)
+@click.option("--store-root", default=None, help="Report store root (default ~/.tradekit/reports).")
+def report_export(record_type: str, store_root: str | None):
+    """Export all records of a type as JSON Lines (bulk load / archive)."""
+    store = _report_store(store_root)
+    store.export_jsonl(sys.stdout, record_type)
