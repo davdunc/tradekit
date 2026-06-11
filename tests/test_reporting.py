@@ -17,10 +17,13 @@ from tradekit.reporting import (
     RiskConfig,
     TradePlan,
     TradeRecord,
+    accounts_from_falcon,
     average_grade,
+    build_daily_card,
     discipline_from_flags,
     fmt_r,
     grade_from_score,
+    ingest_daily,
     multi_day_trend,
     position_risk,
     r_multiple,
@@ -219,6 +222,118 @@ class TestAggregateAndRender:
         out = render_weekly(weekly_rollup(items), rows)
         assert "Daily Breakdown" in out
         assert "Setup Performance" in out
+
+
+class TestIngest:
+    def _falcon(self):
+        # Mimics falcon-stats output (alias-tolerant keys on purpose).
+        return [
+            {
+                "account": "1RB16917",
+                "round_trips": 4,
+                "wins": 3,
+                "losses": 1,
+                "realized": 240.50,
+                "peak": 300.0,
+                "peak_at": "10:15:00",
+                "trough": -45.0,
+                "trough_at": "09:40:00",
+                "max_dd": -60.0,
+                "dd_time": "09:55:00",
+                "streak": "2NW",
+            },
+            {
+                "accid": "TR4425",  # different alias for the id
+                "round_trip_count": 2,  # different alias for round_trips
+                "win_rate": 50.0,  # no explicit wins/losses → reconstructed
+                "net_pnl": -15.0,
+            },
+        ]
+
+    def _narrative(self):
+        return {
+            "headline": "Clean LIVE day; SIM gave a bit back.",
+            "market_regime": "Trending",
+            "trades": [
+                {
+                    "ticker": "nvda",
+                    "account": "1RB16917",
+                    "direction": "long",
+                    "setup": "Fashionably Late",
+                    "shares": 100,
+                    "realized_pnl": 220.0,
+                    "r_multiple": 2.1,
+                    "grade": "a",
+                    "covariance": "normal",
+                    "verdict": "Held to target",
+                }
+            ],
+            "discipline": {  # rubric flags
+                "followed_game_plan": True,
+                "honored_stops": True,
+                "account_separation": True,
+            },
+            "patterns": ["Disciplined account separation"],
+            "lessons": ["Repeat the FL entry discipline"],
+            "monitored_not_traded": ["amd", "arm"],
+        }
+
+    def test_accounts_from_falcon_verbatim_and_kinds(self):
+        accts = accounts_from_falcon(self._falcon())
+        live = next(a for a in accts if a.account == "1RB16917")
+        sim = next(a for a in accts if a.account == "TR4425")
+        assert live.kind is AccountKind.LIVE
+        assert sim.kind is AccountKind.SIM  # inferred from known id
+        # Deterministic numbers carried verbatim, incl. equity shape.
+        assert live.realized == pytest.approx(240.50)
+        assert live.max_drawdown == pytest.approx(-60.0)
+        assert live.max_dd_time == "09:55:00"
+        assert live.round_trips == 4
+
+    def test_winrate_reconstructs_counts(self):
+        accts = accounts_from_falcon(self._falcon())
+        sim = next(a for a in accts if a.account == "TR4425")
+        # 50% of 2 round-trips → 1W/1L.
+        assert (sim.wins, sim.losses) == (1, 1)
+        assert sim.realized == pytest.approx(-15.0)
+
+    def test_falcon_mapping_form(self):
+        mapping = {"1RB16917": {"round_trips": 1, "realized": 10.0}}
+        accts = accounts_from_falcon(mapping)
+        assert accts[0].account == "1RB16917" and accts[0].realized == pytest.approx(10.0)
+
+    def test_build_daily_card_merges_deterministic_and_narrative(self):
+        card = build_daily_card("2026-06-11", self._falcon(), self._narrative())
+        assert card.combined_realized == pytest.approx(225.5)
+        assert card.market_regime == "Trending"
+        t = card.trades[0]
+        assert t.ticker == "NVDA" and t.grade is Grade.A and t.direction is Direction.LONG
+        assert t.account_kind is AccountKind.LIVE  # inferred from account id
+        # discipline flags → reproducible total (2 + 2 + 1)
+        assert card.discipline.total == 5
+        assert card.monitored_not_traded == ["AMD", "ARM"]
+
+    def test_build_daily_card_accepts_scored_discipline_block(self):
+        narrative = {"discipline": {"met": {"honored_stops": True}, "total": 2}}
+        card = build_daily_card("2026-06-11", self._falcon(), narrative)
+        assert card.discipline.total == 2  # recomputed from met, not trusted blindly
+
+    def test_ingest_daily_persists(self, tmp_path):
+        store = FileReportStore(root=tmp_path)
+        card = ingest_daily("2026-06-11", self._falcon(), self._narrative(), store)
+        assert store.get("DAILYCARD", "2026-06-11") is not None
+        # Round-trips through the store unchanged.
+        reloaded = DailyReportCard.from_item(store.get("DAILYCARD", "2026-06-11"))
+        assert reloaded.combined_realized == pytest.approx(card.combined_realized)
+
+    def test_ingested_card_renders_canonical_tables(self):
+        from tradekit.reporting import render_daily_card
+
+        card = build_daily_card("2026-06-11", self._falcon(), self._narrative())
+        out = render_daily_card(card, RiskConfig(r_dollars=280))
+        assert "| **LIVE (1RB16917)** |" in out
+        assert "| **SIM (TR4425)** |" in out
+        assert "+2.1R" in out  # R-units rendered from the trade
 
 
 def _sample_card(date: str = "2026-06-11") -> DailyReportCard:

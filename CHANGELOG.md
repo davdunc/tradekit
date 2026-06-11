@@ -23,7 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `DynamoReportStore`, behind one `ReportStore` contract.
   - `aggregate`/`render` — multi-day and weekly views with one canonical
     column set, read from records instead of re-parsed prose.
-  - `tradekit cards {trend,weekly,show,export}` CLI.
+  - `ingest` — assemble a `DailyReportCard` from deterministic `falcon-stats`
+    output (carried verbatim, alias-tolerant) plus the unstructured trade
+    narrative (grades, discipline, patterns, lessons), and persist it.
+  - `tradekit cards {ingest,trend,weekly,show,export}` CLI.
 
 ### Changed
 

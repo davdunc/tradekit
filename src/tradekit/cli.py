@@ -2221,3 +2221,54 @@ def report_export(record_type: str, store_root: str | None):
     """Export all records of a type as JSON Lines (bulk load / archive)."""
     store = _report_store(store_root)
     store.export_jsonl(sys.stdout, record_type)
+
+
+def _load_json(path: str):
+    """Load JSON from a file path, or from stdin when path is '-'."""
+    import json
+
+    if path == "-":
+        return json.load(sys.stdin)
+    return json.loads(Path(path).read_text())
+
+
+@cards.command("ingest")
+@click.option(
+    "--falcon-stats",
+    "falcon_path",
+    required=True,
+    help="Path to falcon-stats ingest output as JSON ('-' for stdin). Deterministic P&L source.",
+)
+@click.option(
+    "--narrative",
+    "narrative_path",
+    default=None,
+    help="Path to the structured judgment JSON (trades, discipline, patterns, lessons, ...).",
+)
+@click.option("--date", "date_str", default=None, help="ISO date YYYY-MM-DD (default: today ET).")
+@click.option("--store-root", default=None, help="Report store root (default ~/.tradekit/reports).")
+@click.option("--no-persist", is_flag=True, help="Render without writing to the store.")
+def cards_ingest(
+    falcon_path: str,
+    narrative_path: str | None,
+    date_str: str | None,
+    store_root: str | None,
+    no_persist: bool,
+):
+    """Build a daily report card from falcon stats + narrative, persist, and render.
+
+    falcon owns the deterministic numbers (carried verbatim); the narrative JSON
+    supplies the structured judgment (grades, discipline, patterns, lessons).
+    """
+    from tradekit.reporting import build_daily_card, render_daily_card
+
+    date = date_str or now_et().strftime("%Y-%m-%d")
+    falcon_stats = _load_json(falcon_path)
+    narrative = _load_json(narrative_path) if narrative_path else None
+
+    card = build_daily_card(date, falcon_stats, narrative)
+    if not no_persist:
+        store = _report_store(store_root)
+        store.put(card)
+        console.print(f"[green]✓ Wrote card {date} → {store.root / card.archive_path()}[/green]")
+    console.print(render_daily_card(card))
