@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-14
+
 ### Added
 
 - **Session-anchored VWAP** — `analysis.volume.compute_session_vwap()` computes
@@ -53,5 +55,6 @@ standalone package designed to integrate with Daniel Miessler's
 
 [pai]: https://github.com/danielmiessler/Personal_AI_Infrastructure
 [smb]: https://www.smbtraining.com/
-[Unreleased]: https://github.com/davdunc/tradekit/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/davdunc/tradekit/compare/0.2.0...HEAD
+[0.2.0]: https://github.com/davdunc/tradekit/releases/tag/0.2.0
 [0.1.0]: https://github.com/davdunc/tradekit/releases/tag/v0.1.0

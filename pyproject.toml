@@ -1,6 +1,6 @@
 [project]
 name = "tradekit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Personal trading infrastructure for pre-market screening, technical analysis, and trade setup evaluation"
 readme = "README.md"
 license = { text = "MIT" }
