@@ -78,7 +78,7 @@ def detect_vwap_sandwich(
     else:
         sandwich, direction = False, None
 
-    spread_pct = (e - s) / v * 100 if v else None
+    spread_pct = (e - s) / v * 100 if v != 0 else None
 
     if sandwich:
         rel_ema = ">" if e > v else "<"
