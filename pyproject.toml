@@ -8,7 +8,7 @@ authors = [
     { name = "David Duncan", email = "davdunc@davidduncan.org" }
 ]
 requires-python = ">=3.14"
-keywords = ["trading", "intraday", "screener", "technical-analysis", "pai"]
+keywords = ["trading", "intraday", "screener", "technical-analysis", "lifeos"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Financial and Insurance Industry",
@@ -51,7 +51,7 @@ dependencies = [
 Homepage = "https://github.com/davdunc/tradekit"
 Repository = "https://github.com/davdunc/tradekit"
 Issues = "https://github.com/davdunc/tradekit/issues"
-"PAI Upstream" = "https://github.com/danielmiessler/Personal_AI_Infrastructure"
+"LifeOS Upstream" = "https://github.com/danielmiessler/LifeOS"
 
 [project.scripts]
 tradekit = "tradekit.cli:cli"

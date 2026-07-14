@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release. Extracted from the `davdunc/Alvin` monorepo into a
 standalone package designed to integrate with Daniel Miessler's
-[Personal_AI_Infrastructure (PAI)][pai].
+[LifeOS][pai] (formerly Personal AI Infrastructure / PAI).
 
 ### Added
 
@@ -53,7 +53,7 @@ standalone package designed to integrate with Daniel Miessler's
 - Requires Python 3.14+
 - Methodology references [SMB Capital][smb]'s published playbook material
 
-[pai]: https://github.com/danielmiessler/Personal_AI_Infrastructure
+[pai]: https://github.com/danielmiessler/LifeOS
 [smb]: https://www.smbtraining.com/
 [Unreleased]: https://github.com/davdunc/tradekit/compare/0.2.0...HEAD
 [0.2.0]: https://github.com/davdunc/tradekit/releases/tag/0.2.0

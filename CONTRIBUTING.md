@@ -1,7 +1,7 @@
 # Contributing to tradekit
 
 Thanks for considering a contribution! `tradekit` is built to integrate with
-[Daniel Miessler's Personal_AI_Infrastructure (PAI)][pai], and contributions
+[Daniel Miessler's LifeOS][pai] (formerly Personal AI Infrastructure / PAI), and contributions
 that strengthen that integration — as well as general improvements to
 screening, analysis, and data sources — are very welcome.
 
@@ -45,14 +45,14 @@ type checking is advisory (we're still filling in hints).
 - **Commit message style**: imperative first line under 72 chars, blank line,
   body explaining the *why*, not the *what*. See recent commits for examples.
 
-## PAI integration
+## LifeOS integration
 
 When touching the `.env` loader, `tradekit init` wizard, or other
-PAI-facing surfaces, please preserve these invariants:
+LifeOS-facing surfaces, please preserve these invariants:
 
 - **Single shared `.env`** — `tradekit` must never require a second copy of
   keys already configured in `$PAI_DIR/.env`.
-- **Graceful standalone fallback** — `tradekit` must work with zero PAI
+- **Graceful standalone fallback** — `tradekit` must work with zero LifeOS
   context (no `PAI_DIR`, no `~/.claude/.env`).
 - **No personal data in defaults** — account sizes, watchlists, and other
   personal configuration stay in user-owned YAML, never in source.
@@ -66,6 +66,6 @@ Use [GitHub Issues][issues]. For suspected security issues, follow
 
 Be kind. Assume good faith. Focus feedback on the code, not the contributor.
 
-[pai]: https://github.com/danielmiessler/Personal_AI_Infrastructure
+[pai]: https://github.com/danielmiessler/LifeOS
 [uv]: https://github.com/astral-sh/uv
 [issues]: https://github.com/davdunc/tradekit/issues

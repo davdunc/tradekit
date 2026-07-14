@@ -17,7 +17,7 @@ labels: enhancement
 
 <!-- Other approaches you've thought about, or workarounds you're using. -->
 
-## PAI integration
+## LifeOS integration
 
-<!-- If relevant: how does this interact with a shared PAI .env, the Trading
+<!-- If relevant: how does this interact with a shared LifeOS .env, the Trading
      skill, or the pack install flow? Skip if not applicable. -->
