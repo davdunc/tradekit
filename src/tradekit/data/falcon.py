@@ -29,9 +29,7 @@ class FalconReader:
 
     def _conn(self) -> sqlite3.Connection:
         if not self.db_path.exists():
-            raise FalconDBNotFound(
-                f"No Falcon DB at {self.db_path}. Run `falcon screen ...` to populate it first."
-            )
+            raise FalconDBNotFound(f"No Falcon DB at {self.db_path}. Run `falcon screen ...` to populate it first.")
         return sqlite3.connect(str(self.db_path))
 
     def get_top_symbols(

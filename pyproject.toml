@@ -71,6 +71,9 @@ build-backend = "uv_build"
 [tool.ruff]
 line-length = 120
 target-version = "py314"
+# Vendored third-party packages (finvizfinance, ta) are upstream copies — they
+# are not linted or formatted against this project's rules. See _vendor/.
+extend-exclude = ["src/tradekit/_vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
