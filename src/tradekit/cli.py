@@ -206,6 +206,113 @@ def analyze(ticker: str, period: str, source: str | None):
 
 
 @cli.command()
+@click.argument("tickers", nargs=-1)
+@click.option("--watchlist", "watchlist_name", default=None, help="Scan a named watchlist instead of listing tickers.")
+@click.option("--period", default="5d", help="Intraday window (e.g. 1d, 5d). Needs >=34 bars for the 34-SMA.")
+@click.option("--interval", default="15m", help="Bar interval — the setup's timeframe (default 15m).")
+@click.option("--all", "show_all", is_flag=True, help="Show every ticker, not just sandwich hits.")
+@source_option
+def sandwich(
+    tickers: tuple[str, ...],
+    watchlist_name: str | None,
+    period: str,
+    interval: str,
+    show_all: bool,
+    source: str | None,
+):
+    """Detect the 15-Minute VWAP Sandwich across one or more tickers.
+
+    A "sandwich" is when the 9-EMA and 34-SMA close on opposite sides of the New
+    York session VWAP on the 15m chart — the state that precedes a Fashionably
+    Late VWAP cross. Direction is inferred from which average leads. Best with
+    --source=massive (true intraday bars with volume).
+    """
+    from rich.table import Table
+
+    from tradekit.analysis.setups import detect_vwap_sandwich
+
+    settings = get_settings()
+
+    symbols = [t.upper() for t in tickers]
+    if watchlist_name:
+        wl = settings.load_watchlists().get(watchlist_name)
+        if not wl:
+            console.print(f"[red]Watchlist '{watchlist_name}' is empty or not found.[/red]")
+            return
+        symbols = [s.upper() for s in wl]
+    if not symbols:
+        console.print("[red]Provide one or more tickers, or --watchlist NAME.[/red]")
+        return
+
+    provider = get_provider(source)
+    if (source or settings.data_source) not in ("massive", "backtest"):
+        console.print(
+            "[yellow]Note:[/yellow] intraday session VWAP is most reliable with "
+            "[bold]--source=massive[/bold]; other sources may lack 15m volume bars."
+        )
+
+    console.print(f"[bold]Scanning {len(symbols)} ticker(s) for the {interval} VWAP sandwich...[/bold]")
+
+    def num(x, spec: str = "{:.2f}") -> str:
+        return spec.format(x) if x is not None else "—"
+
+    rows = []  # (symbol, result_dict | None, error_str | None)
+    for sym in symbols:
+        try:
+            df = provider.get_history(sym, period=period, interval=interval)
+        except Exception as e:
+            logger.warning("history fetch failed for %s: %s", sym, e)
+            rows.append((sym, None, "error"))
+            continue
+        if df is None or df.empty:
+            rows.append((sym, None, "no data"))
+            continue
+        rows.append((sym, detect_vwap_sandwich(df), None))
+
+    hits = [(s, r) for s, r, _ in rows if r and r["sandwich"]]
+
+    table = Table(title=f"15m VWAP Sandwich — {now_et().strftime('%a %b %d %I:%M %p')} ET")
+    table.add_column("Ticker", style="bold")
+    table.add_column("Sandwich")
+    table.add_column("Bias")
+    table.add_column("Close", justify="right")
+    table.add_column("9-EMA", justify="right")
+    table.add_column("VWAP", justify="right")
+    table.add_column("34-SMA", justify="right")
+    table.add_column("Spread%", justify="right")
+
+    for sym, res, err in rows:
+        if err:
+            if show_all:
+                table.add_row(sym, f"[dim]{err}[/dim]", "", "", "", "", "", "")
+            continue
+        if not res["sandwich"] and not show_all:
+            continue
+        if res["sandwich"]:
+            bias = res["direction"]
+            mark = "[green]✔ bull[/green]" if bias == "bullish" else "[red]✔ bear[/red]"
+            bias_txt = f"[green]{bias}[/green]" if bias == "bullish" else f"[red]{bias}[/red]"
+        else:
+            mark, bias_txt = "[dim]—[/dim]", "[dim]—[/dim]"
+        table.add_row(
+            sym,
+            mark,
+            bias_txt,
+            num(res["close"]),
+            num(res["ema"]),
+            num(res["vwap"]),
+            num(res["sma"]),
+            num(res["spread_pct"], "{:+.2f}"),
+        )
+
+    console.print(table)
+    if hits:
+        console.print("[bold]" + f"{len(hits)} hit(s):[/bold] " + ", ".join(f"{s} ({r['direction']})" for s, r in hits))
+    else:
+        console.print("[dim]No sandwich setups found.[/dim]")
+
+
+@cli.command()
 @click.argument("ticker")
 @click.option("--period", default="3mo", help="History period for level detection.")
 @source_option
