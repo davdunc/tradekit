@@ -206,6 +206,113 @@ def analyze(ticker: str, period: str, source: str | None):
 
 
 @cli.command()
+@click.argument("tickers", nargs=-1)
+@click.option("--watchlist", "watchlist_name", default=None, help="Scan a named watchlist instead of listing tickers.")
+@click.option("--period", default="5d", help="Intraday window (e.g. 1d, 5d). Needs >=34 bars for the 34-SMA.")
+@click.option("--interval", default="15m", help="Bar interval — the setup's timeframe (default 15m).")
+@click.option("--all", "show_all", is_flag=True, help="Show every ticker, not just sandwich hits.")
+@source_option
+def sandwich(
+    tickers: tuple[str, ...],
+    watchlist_name: str | None,
+    period: str,
+    interval: str,
+    show_all: bool,
+    source: str | None,
+):
+    """Detect the 15-Minute VWAP Sandwich across one or more tickers.
+
+    A "sandwich" is when the 9-EMA and 34-SMA close on opposite sides of the New
+    York session VWAP on the 15m chart — the state that precedes a Fashionably
+    Late VWAP cross. Direction is inferred from which average leads. Best with
+    --source=massive (true intraday bars with volume).
+    """
+    from rich.table import Table
+
+    from tradekit.analysis.setups import detect_vwap_sandwich
+
+    settings = get_settings()
+
+    symbols = [t.upper() for t in tickers]
+    if watchlist_name:
+        wl = settings.load_watchlists().get(watchlist_name)
+        if not wl:
+            console.print(f"[red]Watchlist '{watchlist_name}' is empty or not found.[/red]")
+            return
+        symbols = [s.upper() for s in wl]
+    if not symbols:
+        console.print("[red]Provide one or more tickers, or --watchlist NAME.[/red]")
+        return
+
+    provider = get_provider(source)
+    if (source or settings.data_source) not in ("massive", "backtest"):
+        console.print(
+            "[yellow]Note:[/yellow] intraday session VWAP is most reliable with "
+            "[bold]--source=massive[/bold]; other sources may lack 15m volume bars."
+        )
+
+    console.print(f"[bold]Scanning {len(symbols)} ticker(s) for the {interval} VWAP sandwich...[/bold]")
+
+    def num(x, spec: str = "{:.2f}") -> str:
+        return spec.format(x) if x is not None else "—"
+
+    rows = []  # (symbol, result_dict | None, error_str | None)
+    for sym in symbols:
+        try:
+            df = provider.get_history(sym, period=period, interval=interval)
+        except Exception as e:
+            logger.warning("history fetch failed for %s: %s", sym, e)
+            rows.append((sym, None, "error"))
+            continue
+        if df is None or df.empty:
+            rows.append((sym, None, "no data"))
+            continue
+        rows.append((sym, detect_vwap_sandwich(df), None))
+
+    hits = [(s, r) for s, r, _ in rows if r and r["sandwich"]]
+
+    table = Table(title=f"15m VWAP Sandwich — {now_et().strftime('%a %b %d %I:%M %p')} ET")
+    table.add_column("Ticker", style="bold")
+    table.add_column("Sandwich")
+    table.add_column("Bias")
+    table.add_column("Close", justify="right")
+    table.add_column("9-EMA", justify="right")
+    table.add_column("VWAP", justify="right")
+    table.add_column("34-SMA", justify="right")
+    table.add_column("Spread%", justify="right")
+
+    for sym, res, err in rows:
+        if err:
+            if show_all:
+                table.add_row(sym, f"[dim]{err}[/dim]", "", "", "", "", "", "")
+            continue
+        if not res["sandwich"] and not show_all:
+            continue
+        if res["sandwich"]:
+            bias = res["direction"]
+            mark = "[green]✔ bull[/green]" if bias == "bullish" else "[red]✔ bear[/red]"
+            bias_txt = f"[green]{bias}[/green]" if bias == "bullish" else f"[red]{bias}[/red]"
+        else:
+            mark, bias_txt = "[dim]—[/dim]", "[dim]—[/dim]"
+        table.add_row(
+            sym,
+            mark,
+            bias_txt,
+            num(res["close"]),
+            num(res["ema"]),
+            num(res["vwap"]),
+            num(res["sma"]),
+            num(res["spread_pct"], "{:+.2f}"),
+        )
+
+    console.print(table)
+    if hits:
+        console.print("[bold]" + f"{len(hits)} hit(s):[/bold] " + ", ".join(f"{s} ({r['direction']})" for s, r in hits))
+    else:
+        console.print("[dim]No sandwich setups found.[/dim]")
+
+
+@cli.command()
 @click.argument("ticker")
 @click.option("--period", default="3mo", help="History period for level detection.")
 @source_option
@@ -1443,16 +1550,25 @@ def init(env_file: Path | None, non_interactive: bool):
 
 
 @cli.command()
-@click.option("--group", "group_type", type=click.Choice(["sector", "industry", "country", "all"]),
-              default="all", help="Which group(s) to pull.")
+@click.option(
+    "--group",
+    "group_type",
+    type=click.Choice(["sector", "industry", "country", "all"]),
+    default="all",
+    help="Which group(s) to pull.",
+)
 @click.option("--top", default=12, help="Top/bottom N for industry leaders/laggards.")
 @click.option("--push-notion", is_flag=True, help="Mirror summary to Notion TeamJaDaDa hub.")
 @click.option("--save", is_flag=True, default=True, help="Save full data to ~/market_data/groups_<DATE>.json.")
-@click.option("--diff", "diff_against", default=None, metavar="DATE_OR_AUTO",
-              help="Compare today vs prior snapshot. Pass 'auto' for most-recent prior file, or YYYY-MM-DD.")
+@click.option(
+    "--diff",
+    "diff_against",
+    default=None,
+    metavar="DATE_OR_AUTO",
+    help="Compare today vs prior snapshot. Pass 'auto' for most-recent prior file, or YYYY-MM-DD.",
+)
 @click.option("--diff-metric", default="perf_w", help="Metric to diff: perf_w, perf_m, perf_q, perf_ytd.")
-def groups(group_type: str, top: int, push_notion: bool, save: bool,
-           diff_against: str | None, diff_metric: str):
+def groups(group_type: str, top: int, push_notion: bool, save: bool, diff_against: str | None, diff_metric: str):
     """Pull Finviz Elite group performance — sector/industry/country rotation snapshot.
 
     Sector view shows 11 GICS-style sectors. Industry view has ~144 sub-industries.
@@ -1475,7 +1591,7 @@ def groups(group_type: str, top: int, push_notion: bool, save: bool,
         out[g] = df.to_dict("records")
 
         if g == "sector":
-            console.print(f"\n[bold cyan]SECTORS — ranked by weekly performance[/bold cyan]")
+            console.print("\n[bold cyan]SECTORS — ranked by weekly performance[/bold cyan]")
             ranked = df.sort_values("perf_w", ascending=False)
             for r in ranked.itertuples():
                 style = "green" if r.perf_w > 0 else "red"
@@ -1504,7 +1620,7 @@ def groups(group_type: str, top: int, push_notion: bool, save: bool,
                 )
 
         elif g == "country":
-            console.print(f"\n[bold cyan]COUNTRIES — top 10 by weekly[/bold cyan]")
+            console.print("\n[bold cyan]COUNTRIES — top 10 by weekly[/bold cyan]")
             for r in df.sort_values("perf_w", ascending=False).head(10).itertuples():
                 style = "green" if r.perf_w > 0 else "red"
                 console.print(
@@ -1523,8 +1639,6 @@ def groups(group_type: str, top: int, push_notion: bool, save: bool,
 
     # Diff against a prior snapshot
     if diff_against:
-        from tradekit.data.finviz_elite import diff_groups
-
         market_data = Path.home() / "market_data"
         if diff_against == "auto":
             files = sorted(market_data.glob("groups_*.json"))
@@ -1556,9 +1670,8 @@ def groups(group_type: str, top: int, push_notion: bool, save: bool,
 
 def _push_groups_to_notion(data: dict[str, list[dict]]) -> None:
     """Build a markdown summary and push to the TeamJaDaDa Document Hub."""
-    from datetime import datetime
     import subprocess
-    import json as _json
+    from datetime import datetime
 
     date = datetime.now().strftime("%Y-%m-%d")
     lines = [f"# Group Rotation Snapshot — {date}\n"]
@@ -1596,9 +1709,14 @@ def _push_groups_to_notion(data: dict[str, list[dict]]) -> None:
 
     # Use the Notion MCP via Claude CLI (parent has the auth)
     cmd = [
-        "claude", "--print", "--model", "haiku",
-        "--allowed-tools", "mcp__claude_ai_Notion__notion-create-pages",
-        "--system-prompt", (
+        "claude",
+        "--print",
+        "--model",
+        "haiku",
+        "--allowed-tools",
+        "mcp__claude_ai_Notion__notion-create-pages",
+        "--system-prompt",
+        (
             "You have access to the Notion MCP. Create ONE page in the TeamJaDaDa Document Hub "
             "(data_source_id: 2d0973b9-8fae-80f1-860c-000b23ffd54e) with the markdown content "
             "from the user. Properties: 'Doc name' = the H1 from the markdown, 'Document Type' = 'Watchlist', "
@@ -1610,32 +1728,60 @@ def _push_groups_to_notion(data: dict[str, list[dict]]) -> None:
 
 @cli.command("weekly-review")
 @click.option("--tickers", default="", help="Comma-separated watchlist tickers (e.g. 'AAPL,MSFT,NVDA').")
-@click.option("--tickers-file", type=click.Path(exists=True),
-              help="Path to a newline-delimited ticker file.")
-@click.option("--from-falcon", is_flag=True, default=False,
-              help="Pull tickers from the Falcon screener DB (~/.falcon/falcon.db).")
-@click.option("--falcon-strategy", default=None,
-              help="Filter Falcon DB by strategy name (e.g. 'momentum_long'). Default: all strategies.")
-@click.option("--falcon-mode", type=click.Choice(["top", "recent"]), default="top",
-              help="Falcon source: 'top' = most-frequent symbols over window, 'recent' = last N runs.")
+@click.option("--tickers-file", type=click.Path(exists=True), help="Path to a newline-delimited ticker file.")
+@click.option(
+    "--from-falcon", is_flag=True, default=False, help="Pull tickers from the Falcon screener DB (~/.falcon/falcon.db)."
+)
+@click.option(
+    "--falcon-strategy",
+    default=None,
+    help="Filter Falcon DB by strategy name (e.g. 'momentum_long'). Default: all strategies.",
+)
+@click.option(
+    "--falcon-mode",
+    type=click.Choice(["top", "recent"]),
+    default="top",
+    help="Falcon source: 'top' = most-frequent symbols over window, 'recent' = last N runs.",
+)
 @click.option("--falcon-days", default=7, help="Lookback days for --falcon-mode top.")
 @click.option("--falcon-limit", default=20, help="Max symbols to pull from Falcon.")
-@click.option("--falcon-db", type=click.Path(), default=None,
-              help="Override path to falcon.db (default: ~/.falcon/falcon.db).")
-@click.option("--with-debates", "n_debates", default=0,
-              help="Run bull/bear debates on top-N tickers by |RS spread|. 0 = skip.")
-@click.option("--debate-level", type=click.Choice(["fast", "standard", "smart"]), default="fast",
-              help="Inference level for debates if --with-debates > 0.")
-@click.option("--out-dir", type=click.Path(),
-              default=None, help="Output dir (default: ~/.claude/MEMORY/WORK/<DATE>_weekly-review/).")
-@click.option("--push-notion", is_flag=True,
-              help="After generating, also push the markdown to Notion. Skip if you want to edit first.")
-def weekly_review(tickers: str, tickers_file: str | None,
-                  from_falcon: bool, falcon_strategy: str | None,
-                  falcon_mode: str, falcon_days: int, falcon_limit: int,
-                  falcon_db: str | None,
-                  n_debates: int,
-                  debate_level: str, out_dir: str | None, push_notion: bool):
+@click.option(
+    "--falcon-db", type=click.Path(), default=None, help="Override path to falcon.db (default: ~/.falcon/falcon.db)."
+)
+@click.option(
+    "--with-debates", "n_debates", default=0, help="Run bull/bear debates on top-N tickers by |RS spread|. 0 = skip."
+)
+@click.option(
+    "--debate-level",
+    type=click.Choice(["fast", "standard", "smart"]),
+    default="fast",
+    help="Inference level for debates if --with-debates > 0.",
+)
+@click.option(
+    "--out-dir",
+    type=click.Path(),
+    default=None,
+    help="Output dir (default: ~/.claude/MEMORY/WORK/<DATE>_weekly-review/).",
+)
+@click.option(
+    "--push-notion",
+    is_flag=True,
+    help="After generating, also push the markdown to Notion. Skip if you want to edit first.",
+)
+def weekly_review(
+    tickers: str,
+    tickers_file: str | None,
+    from_falcon: bool,
+    falcon_strategy: str | None,
+    falcon_mode: str,
+    falcon_days: int,
+    falcon_limit: int,
+    falcon_db: str | None,
+    n_debates: int,
+    debate_level: str,
+    out_dir: str | None,
+    push_notion: bool,
+):
     """Generate the full weekly trading review as editable markdown.
 
     Composes: sector/industry rotation (with W-over-W diff), watchlist RS spreads,
@@ -1652,9 +1798,9 @@ def weekly_review(tickers: str, tickers_file: str | None,
 
     # Resolve tickers — priority: --from-falcon > --tickers-file > --tickers > default
     ticker_list: list[str] = []
-    ticker_source = "default"
     if from_falcon:
-        from tradekit.data.falcon import FalconReader, FalconDBNotFound, DEFAULT_DB_PATH
+        from tradekit.data.falcon import DEFAULT_DB_PATH, FalconDBNotFound, FalconReader
+
         try:
             reader = FalconReader(db_path=Path(falcon_db) if falcon_db else DEFAULT_DB_PATH)
             if falcon_mode == "top":
@@ -1681,7 +1827,6 @@ def weekly_review(tickers: str, tickers_file: str | None,
                     f"[bold]Falcon: pulled {len(ticker_list)} symbols "
                     f"from last 3 runs (strategy={falcon_strategy or 'all'})[/bold]"
                 )
-            ticker_source = f"falcon ({falcon_mode})"
         except FalconDBNotFound as e:
             console.print(f"[red]{e}[/red]")
             return
@@ -1689,17 +1834,17 @@ def weekly_review(tickers: str, tickers_file: str | None,
             console.print("[yellow]Falcon DB had no matching symbols. Falling back to defaults.[/yellow]")
     if not ticker_list and tickers_file:
         ticker_list = [t.strip().upper() for t in Path(tickers_file).read_text().splitlines() if t.strip()]
-        ticker_source = f"file:{tickers_file}"
     if not ticker_list and tickers:
         ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
-        ticker_source = "--tickers"
     if not ticker_list:
         ticker_list = ["AAPL", "MSFT", "NVDA", "AMD", "GOOGL", "META", "AMZN", "TSLA", "AVGO", "PLTR"]
         console.print("[yellow]No tickers provided; using default mega-cap watchlist.[/yellow]")
 
     today_iso = datetime.now().strftime("%Y-%m-%d")
-    out_path = Path(out_dir) if out_dir else (
-        Path.home() / ".claude" / "MEMORY" / "WORK" / f"{today_iso.replace('-', '')}_weekly-review"
+    out_path = (
+        Path(out_dir)
+        if out_dir
+        else (Path.home() / ".claude" / "MEMORY" / "WORK" / f"{today_iso.replace('-', '')}_weekly-review")
     )
     out_path.mkdir(parents=True, exist_ok=True)
 
@@ -1730,10 +1875,21 @@ def weekly_review(tickers: str, tickers_file: str | None,
 
     # 2) RS spread for watchlist
     console.print(f"  [2/4] Computing RS spreads for {len(ticker_list)} tickers...")
-    quotes_df = fp.get_quotes(ticker_list, cols=[
-        "ticker", "company", "industry", "perf_w", "perf_m", "price",
-        "ah_close", "ah_change", "rsi", "atr",
-    ])
+    quotes_df = fp.get_quotes(
+        ticker_list,
+        cols=[
+            "ticker",
+            "company",
+            "industry",
+            "perf_w",
+            "perf_m",
+            "price",
+            "ah_close",
+            "ah_change",
+            "rsi",
+            "atr",
+        ],
+    )
     rs_df = compute_rs_spread(quotes_df, groups_data["industry"])
 
     # 3) Optional debates on top RS movers
@@ -1763,7 +1919,9 @@ def weekly_review(tickers: str, tickers_file: str | None,
                     "atr": q.get("atr"),
                     "rsi": q.get("rsi"),
                     "recent_5_bars": recent,
-                    "setup_note": "Weekly review RS-leader debate — high |spread| means idiosyncratic move not industry beta.",
+                    "setup_note": (
+                        "Weekly review RS-leader debate — high |spread| means idiosyncratic move not industry beta."
+                    ),
                 }
             except Exception as e:
                 console.print(f"    [yellow]ctx err for {tk}: {e}[/yellow]")
@@ -1787,21 +1945,22 @@ def weekly_review(tickers: str, tickers_file: str | None,
         debate_results = asyncio.run(run_all())
         for tk, res in debate_results:
             j = res.judge
-            debates.append({
-                "ticker": tk,
-                "verdict": j.verdict if j else "ERR",
-                "confidence": j.confidence if j else 0.0,
-                "stronger": j.stronger_side if j else "n/a",
-                "rationale": j.rationale if j else (res.error or ""),
-                "key_levels": j.key_levels if j else {},
-                "bull_thesis": (res.bull.parsed or {}).get("thesis", "") if res.bull.parsed else "",
-                "bear_thesis": (res.bear.parsed or {}).get("thesis", "") if res.bear.parsed else "",
-            })
+            debates.append(
+                {
+                    "ticker": tk,
+                    "verdict": j.verdict if j else "ERR",
+                    "confidence": j.confidence if j else 0.0,
+                    "stronger": j.stronger_side if j else "n/a",
+                    "rationale": j.rationale if j else (res.error or ""),
+                    "key_levels": j.key_levels if j else {},
+                    "bull_thesis": (res.bull.parsed or {}).get("thesis", "") if res.bull.parsed else "",
+                    "bear_thesis": (res.bear.parsed or {}).get("thesis", "") if res.bear.parsed else "",
+                }
+            )
 
     # 4) Render markdown
     console.print("  [4/4] Rendering REVIEW.md...")
-    md = _render_review_md(today_iso, groups_data, sector_diff, industry_diff,
-                           diff_label, rs_df, debates)
+    md = _render_review_md(today_iso, groups_data, sector_diff, industry_diff, diff_label, rs_df, debates)
     review_path = out_path / "REVIEW.md"
     review_path.write_text(md)
     console.print(f"\n[bold green]✓ Review written to:[/bold green] {review_path}")
@@ -1818,21 +1977,29 @@ def publish_review(review_path: str):
     """Push an existing REVIEW.md (possibly edited) to Notion."""
     from datetime import datetime
     from pathlib import Path
+
     md = Path(review_path).read_text()
     today_iso = datetime.now().strftime("%Y-%m-%d")
     _publish_review_to_notion(md, today_iso)
     console.print(f"[green]✓ Published {review_path} to Notion[/green]")
 
 
-def _render_review_md(date_iso: str, groups_data: dict,
-                       sector_diff: list[dict], industry_diff: list[dict],
-                       diff_label: str,
-                       rs_df, debates: list[dict]) -> str:
+def _render_review_md(
+    date_iso: str,
+    groups_data: dict,
+    sector_diff: list[dict],
+    industry_diff: list[dict],
+    diff_label: str,
+    rs_df,
+    debates: list[dict],
+) -> str:
     """Pure markdown renderer — keep all formatting in one place so it's easy to tune."""
     out: list[str] = []
     out.append(f"# Weekly Trading Review — {date_iso}\n")
-    out.append("> Generated by `tradekit weekly-review`. Edit freely. Push with "
-               "`tradekit publish-review REVIEW.md` when ready.\n")
+    out.append(
+        "> Generated by `tradekit weekly-review`. Edit freely. Push with "
+        "`tradekit publish-review REVIEW.md` when ready.\n"
+    )
     out.append("---\n")
 
     # Headline read (you fill this in)
@@ -1902,14 +2069,15 @@ def _render_review_md(date_iso: str, groups_data: dict,
     # Watchlist RS
     if not rs_df.empty:
         out.append("## Watchlist — Relative Strength Spread\n")
-        out.append("Spread = ticker weekly perf − industry weekly perf. "
-                   "**>+10pp = idiosyncratic strength**, **<-10pp = idiosyncratic weakness**.\n")
+        out.append(
+            "Spread = ticker weekly perf − industry weekly perf. "
+            "**>+10pp = idiosyncratic strength**, **<-10pp = idiosyncratic weakness**.\n"
+        )
         out.append("| Ticker | Industry | Tkr W | Ind W | Spread |")
         out.append("|--------|----------|------:|------:|-------:|")
         for r in rs_df.itertuples():
             out.append(
-                f"| {r.ticker} | {r.industry} | {r.ticker_w:+.2f}% | "
-                f"{r.industry_w:+.2f}% | **{r.rs_spread:+.2f}pp** |"
+                f"| {r.ticker} | {r.industry} | {r.ticker_w:+.2f}% | {r.industry_w:+.2f}% | **{r.rs_spread:+.2f}pp** |"
             )
         out.append("")
         out.append("---\n")
@@ -1919,7 +2087,10 @@ def _render_review_md(date_iso: str, groups_data: dict,
         out.append("## Bull/Bear Debates — Top RS Leaders\n")
         for d in debates:
             badge = {"long": "🟢", "short": "🔴", "skip": "⚪", "ERR": "❌"}.get(d["verdict"], "⚪")
-            out.append(f"### {badge} {d['ticker']} — {d['verdict'].upper()} (conf {d['confidence']:.2f}, stronger {d['stronger']})\n")
+            out.append(
+                f"### {badge} {d['ticker']} — {d['verdict'].upper()} "
+                f"(conf {d['confidence']:.2f}, stronger {d['stronger']})\n"
+            )
             out.append(f"**Bull:** {d['bull_thesis']}\n")
             out.append(f"**Bear:** {d['bear_thesis']}\n")
             out.append(f"**Judge:** {d['rationale']}\n")
@@ -1943,10 +2114,16 @@ def _render_review_md(date_iso: str, groups_data: dict,
 def _publish_review_to_notion(md: str, date_iso: str) -> None:
     """Push markdown to TeamJaDaDa Document Hub via the Notion MCP."""
     import subprocess
+
     cmd = [
-        "claude", "--print", "--model", "haiku",
-        "--allowed-tools", "mcp__claude_ai_Notion__notion-create-pages",
-        "--system-prompt", (
+        "claude",
+        "--print",
+        "--model",
+        "haiku",
+        "--allowed-tools",
+        "mcp__claude_ai_Notion__notion-create-pages",
+        "--system-prompt",
+        (
             "You have access to the Notion MCP. Create ONE page in the TeamJaDaDa Document Hub "
             "(data_source_id: 2d0973b9-8fae-80f1-860c-000b23ffd54e). Use the H1 from the markdown "
             "as 'Doc name', set 'Document Type' = 'Watchlist', set 'date:Date:start' to today's "
@@ -1959,6 +2136,7 @@ def _publish_review_to_notion(md: str, date_iso: str) -> None:
 def _print_diff(today: dict, prior: dict, metric: str, top_n: int) -> None:
     """Print W-over-W deltas for sectors and industries."""
     from tradekit.data.finviz_elite import diff_groups
+
     label = {"perf_w": "Week", "perf_m": "Month", "perf_q": "Quarter", "perf_ytd": "YTD"}.get(metric, metric)
 
     if "sector" in today and "sector" in prior:
@@ -2020,16 +2198,25 @@ def rs(tickers: tuple[str, ...], top: int):
         groups_data = {"industry": fp.get_group("industry").to_dict("records")}
 
     console.print(f"[bold]Pulling quotes for {len(tickers)} tickers...[/bold]")
-    quotes_df = fp.get_quotes(list(tickers), cols=[
-        "ticker", "company", "industry", "perf_w", "price", "ah_close", "ah_change",
-    ])
+    quotes_df = fp.get_quotes(
+        list(tickers),
+        cols=[
+            "ticker",
+            "company",
+            "industry",
+            "perf_w",
+            "price",
+            "ah_close",
+            "ah_change",
+        ],
+    )
 
     rs_df = compute_rs_spread(quotes_df, groups_data["industry"])
     if rs_df.empty:
         console.print("[red]No RS data computed — check ticker symbols[/red]")
         return
 
-    console.print(f"\n[bold cyan]RELATIVE STRENGTH SPREAD — week, ranked by |spread|[/bold cyan]")
+    console.print("\n[bold cyan]RELATIVE STRENGTH SPREAD — week, ranked by |spread|[/bold cyan]")
     console.print(f"  {'TICKER':<7}{'INDUSTRY':<42}{'TKR_W':>9}{'IND_W':>9}{'SPREAD':>10}")
     console.print("  " + "-" * 77)
     for r in rs_df.head(top).itertuples():
@@ -2041,14 +2228,18 @@ def rs(tickers: tuple[str, ...], top: int):
             f"[bold {style}]{r.rs_spread:>+9.2f}pp[/bold {style}]"
         )
 
-    console.print(f"\n[dim]Tip: spread > +10pp = idiosyncratic strength | spread < -10pp = idiosyncratic weakness[/dim]")
+    console.print("\n[dim]Tip: spread > +10pp = idiosyncratic strength | spread < -10pp = idiosyncratic weakness[/dim]")
 
 
 @cli.command()
 @click.argument("ticker")
 @click.option("--period", default="1mo", help="History period for context.")
-@click.option("--level", type=click.Choice(["fast", "standard", "smart"]), default="standard",
-              help="Inference level: fast=haiku, standard=sonnet, smart=opus.")
+@click.option(
+    "--level",
+    type=click.Choice(["fast", "standard", "smart"]),
+    default="standard",
+    help="Inference level: fast=haiku, standard=sonnet, smart=opus.",
+)
 @click.option("--no-persist", is_flag=True, help="Skip writing transcript to disk.")
 @source_option
 def debate(ticker: str, period: str, level: str, no_persist: bool, source: str | None):
@@ -2118,14 +2309,18 @@ def debate(ticker: str, period: str, level: str, no_persist: bool, source: str |
     j = result.judge
 
     console.print()
-    console.print(f"[bold green]BULL ({result.bull.latency_ms}ms, conviction {bull_p.get('conviction', 'n/a')}):[/bold green]")
+    console.print(
+        f"[bold green]BULL ({result.bull.latency_ms}ms, conviction {bull_p.get('conviction', 'n/a')}):[/bold green]"
+    )
     console.print(f"  Thesis: {bull_p.get('thesis', '')}")
     for e in bull_p.get("evidence", []):
         console.print(f"  - {e}")
     console.print(f"  Invalidation: {bull_p.get('invalidation', '')}")
 
     console.print()
-    console.print(f"[bold red]BEAR ({result.bear.latency_ms}ms, conviction {bear_p.get('conviction', 'n/a')}):[/bold red]")
+    console.print(
+        f"[bold red]BEAR ({result.bear.latency_ms}ms, conviction {bear_p.get('conviction', 'n/a')}):[/bold red]"
+    )
     console.print(f"  Thesis: {bear_p.get('thesis', '')}")
     for e in bear_p.get("evidence", []):
         console.print(f"  - {e}")
@@ -2134,11 +2329,14 @@ def debate(ticker: str, period: str, level: str, no_persist: bool, source: str |
     if j:
         console.print()
         verdict_style = {"long": "bold green", "short": "bold red", "skip": "yellow"}.get(j.verdict, "white")
-        console.print(f"[{verdict_style}]VERDICT: {j.verdict.upper()}  (confidence {j.confidence:.2f}, stronger side: {j.stronger_side})[/{verdict_style}]")
+        console.print(
+            f"[{verdict_style}]VERDICT: {j.verdict.upper()}  "
+            f"(confidence {j.confidence:.2f}, stronger side: {j.stronger_side})[/{verdict_style}]"
+        )
         console.print(f"  Rationale: {j.rationale}")
         kl = j.key_levels or {}
         console.print(f"  Entry {kl.get('entry')}  /  Stop {kl.get('stop')}  /  Target {kl.get('target')}")
         console.print(f"  [dim]judge latency {j.latency_ms}ms[/dim]")
 
     if not no_persist:
-        console.print(f"\n[dim]Transcript saved to ~/market_data/debates/[/dim]")
+        console.print("\n[dim]Transcript saved to ~/market_data/debates/[/dim]")

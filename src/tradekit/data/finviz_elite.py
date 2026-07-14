@@ -56,6 +56,7 @@ class FinvizEliteConfig:
         if not tok:
             # Fallback: read ~/Projects/falcon/.env (where it actually lives)
             from pathlib import Path
+
             for p in [Path.home() / "Projects/falcon/.env", Path.home() / ".env"]:
                 if p.exists():
                     for line in p.read_text().splitlines():
@@ -137,13 +138,35 @@ class FinvizEliteProvider:
 
     # Verified Finviz Elite screener-export column codes
     SCREENER_COLS = {
-        "ticker": 1, "company": 2, "sector": 3, "industry": 4, "country": 5,
-        "market_cap": 6, "pe": 7,
-        "perf_w": 42, "perf_m": 43, "perf_q": 44, "perf_h": 45, "perf_y": 46, "perf_ytd": 47,
-        "beta": 48, "atr": 49, "vol_week": 50,
-        "rsi": 60, "change_open": 61, "gap": 62, "avg_vol": 63, "rvol": 64,
-        "price": 65, "change": 66, "volume": 67, "earnings": 68, "target": 69, "ipo": 70,
-        "ah_close": 71, "ah_change": 72,
+        "ticker": 1,
+        "company": 2,
+        "sector": 3,
+        "industry": 4,
+        "country": 5,
+        "market_cap": 6,
+        "pe": 7,
+        "perf_w": 42,
+        "perf_m": 43,
+        "perf_q": 44,
+        "perf_h": 45,
+        "perf_y": 46,
+        "perf_ytd": 47,
+        "beta": 48,
+        "atr": 49,
+        "vol_week": 50,
+        "rsi": 60,
+        "change_open": 61,
+        "gap": 62,
+        "avg_vol": 63,
+        "rvol": 64,
+        "price": 65,
+        "change": 66,
+        "volume": 67,
+        "earnings": 68,
+        "target": 69,
+        "ipo": 70,
+        "ah_close": 71,
+        "ah_change": 72,
     }
 
     def get_quotes(self, tickers: list[str], cols: list[str] | None = None) -> pd.DataFrame:
@@ -154,17 +177,27 @@ class FinvizEliteProvider:
         if not tickers:
             return pd.DataFrame()
         cols = cols or [
-            "ticker", "company", "sector", "industry", "price", "change",
-            "volume", "ah_close", "ah_change",
-            "perf_w", "perf_m", "perf_q", "perf_ytd",
-            "rsi", "atr", "rvol", "earnings",
+            "ticker",
+            "company",
+            "sector",
+            "industry",
+            "price",
+            "change",
+            "volume",
+            "ah_close",
+            "ah_change",
+            "perf_w",
+            "perf_m",
+            "perf_q",
+            "perf_ytd",
+            "rsi",
+            "atr",
+            "rvol",
+            "earnings",
         ]
         col_codes = ",".join(str(self.SCREENER_COLS[c]) for c in cols if c in self.SCREENER_COLS)
         ticker_str = ",".join(t.upper() for t in tickers)
-        url = (
-            f"{self.config.base_elite}/export.ashx"
-            f"?v=152&t={ticker_str}&c={col_codes}&auth={self.config.auth_token}"
-        )
+        url = f"{self.config.base_elite}/export.ashx?v=152&t={ticker_str}&c={col_codes}&auth={self.config.auth_token}"
         r = requests.get(url, timeout=self.config.timeout)
         r.raise_for_status()
 
@@ -215,8 +248,9 @@ class FinvizEliteProvider:
         period_days = {"1mo": 22, "3mo": 66, "6mo": 132, "1y": 252, "2y": 504, "5y": 1260, "max": 99999}.get(period, 66)
         df = df.tail(period_days).copy()
         # Match yfinance's capitalized column names so existing consumers work
-        df = df.rename(columns={"date": "Date", "open": "Open", "high": "High",
-                                 "low": "Low", "close": "Close", "volume": "Volume"})
+        df = df.rename(
+            columns={"date": "Date", "open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume"}
+        )
         df = df.set_index("Date")
         return df
 
@@ -232,8 +266,9 @@ class FinvizEliteProvider:
         }
 
 
-def diff_groups(today: dict, prior: dict, group_type: str = "sector",
-                metric: str = "perf_w", top_n: int = 10) -> list[dict]:
+def diff_groups(
+    today: dict, prior: dict, group_type: str = "sector", metric: str = "perf_w", top_n: int = 10
+) -> list[dict]:
     """Compute week-over-week deltas between two group snapshots.
 
     Returns list of {name, today, prior, delta} sorted by delta (improvers first).
@@ -245,12 +280,14 @@ def diff_groups(today: dict, prior: dict, group_type: str = "sector",
         p = prior_idx.get(name)
         if not p:
             continue
-        deltas.append({
-            "name": name,
-            "today": t.get(metric),
-            "prior": p.get(metric),
-            "delta": t.get(metric, 0) - p.get(metric, 0),
-        })
+        deltas.append(
+            {
+                "name": name,
+                "today": t.get(metric),
+                "prior": p.get(metric),
+                "delta": t.get(metric, 0) - p.get(metric, 0),
+            }
+        )
     deltas.sort(key=lambda x: x["delta"], reverse=True)
     return deltas
 
@@ -276,13 +313,15 @@ def compute_rs_spread(quotes_df: pd.DataFrame, groups_industry: list[dict]) -> p
         iw = industry_w.get(ind)
         if iw is None:
             continue
-        rows.append({
-            "ticker": tk,
-            "industry": ind,
-            "ticker_w": float(tw),
-            "industry_w": float(iw),
-            "rs_spread": float(tw) - float(iw),
-        })
+        rows.append(
+            {
+                "ticker": tk,
+                "industry": ind,
+                "ticker_w": float(tw),
+                "industry_w": float(iw),
+                "rs_spread": float(tw) - float(iw),
+            }
+        )
     out = pd.DataFrame(rows)
     if not out.empty:
         out = out.sort_values("rs_spread", key=lambda s: s.abs(), ascending=False)

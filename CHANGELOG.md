@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Session-anchored VWAP** — `analysis.volume.compute_session_vwap()` computes
+  the New York session VWAP (resets at the 09:30 ET open, excludes pre-market),
+  distinct from the existing rolling `compute_vwap`
+- **15-Minute VWAP Sandwich detector** — `analysis.setups.detect_vwap_sandwich()`
+  flags when the 9-EMA and 34-SMA close on opposite sides of session VWAP on 15m
+  bars; direction-agnostic (bullish/bearish inferred from which average leads)
+
 ## [0.1.0] — 2026-04-22
 
 Initial release. Extracted from the `davdunc/Alvin` monorepo into a
