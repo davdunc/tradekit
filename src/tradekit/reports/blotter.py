@@ -120,16 +120,23 @@ def fetch_minute_bars(symbols: set[str], date: str, *, settings=None):
     d = settings.data
     ak = d.backtest_access_key or os.environ.get("MASSIVE_S3_ACCESS_KEY", "")
     sk = d.backtest_secret_key or os.environ.get("MASSIVE_S3_SECRET_KEY", "")
-    s3 = boto3.client(
-        "s3",
-        endpoint_url=d.backtest_endpoint,
-        aws_access_key_id=ak,
-        aws_secret_access_key=sk,
-    )
     y, m, _ = date.split("-")
     key = f"us_stocks_sip/minute_aggs_v1/{y}/{m}/{date}.csv.gz"
-    logger.info("Fetching s3://%s/%s", d.backtest_bucket, key)
-    body = s3.get_object(Bucket=d.backtest_bucket, Key=key)["Body"].read()
+    try:
+        s3 = boto3.client(
+            "s3",
+            endpoint_url=d.backtest_endpoint,
+            aws_access_key_id=ak,
+            aws_secret_access_key=sk,
+        )
+        logger.info("Fetching s3://%s/%s", d.backtest_bucket, key)
+        body = s3.get_object(Bucket=d.backtest_bucket, Key=key)["Body"].read()
+    except Exception as exc:
+        # Log only the exception TYPE — never the message/traceback, which can
+        # surface AWS credential/config details (CWE-209). Degrade gracefully so
+        # the blotter still renders the trades that do have bars.
+        logger.error("Failed to fetch minute bars for %s: %s", date, type(exc).__name__)
+        return {s: [] for s in symbols}
     out: dict[str, list] = {s: [] for s in symbols}
     with gzip.open(io.BytesIO(body), "rt") as fh:
         for line in fh:
