@@ -13,14 +13,14 @@
 - [ ] `uv run ruff format --check .` passes
 - [ ] New behavior has tests
 
-## PAI compatibility
+## LifeOS compatibility
 
 <!-- Check any that apply; leave the rest unchecked. -->
 
 - [ ] Touches the `.env` loader or `tradekit init` wizard
 - [ ] Touches shared-environment assumptions (PAI_DIR, ~/.claude/.env)
-- [ ] Works standalone (no PAI context)
-- [ ] N/A — not a PAI-facing change
+- [ ] Works standalone (no LifeOS context)
+- [ ] N/A — not a LifeOS-facing change
 
 ## Notes for reviewers
 

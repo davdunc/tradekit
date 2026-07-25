@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -67,6 +67,7 @@ Output STRICT JSON only, no prose, no markdown fences:
 
 # ---------- data classes ---------------------------------------------------
 
+
 @dataclass
 class AgentCase:
     role: str  # "bull" | "bear"
@@ -103,6 +104,7 @@ class DebateResult:
 
 
 # ---------- main entry ----------------------------------------------------
+
 
 async def _run_side(role: str, system: str, user: str, level: str) -> AgentCase:
     res = await inference_call(system, user, level=level, expect_json=True, timeout_s=60)

@@ -1,6 +1,6 @@
 [project]
 name = "tradekit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Personal trading infrastructure for pre-market screening, technical analysis, and trade setup evaluation"
 readme = "README.md"
 license = { text = "MIT" }
@@ -8,7 +8,7 @@ authors = [
     { name = "David Duncan", email = "davdunc@davidduncan.org" }
 ]
 requires-python = ">=3.14"
-keywords = ["trading", "intraday", "screener", "technical-analysis", "pai"]
+keywords = ["trading", "intraday", "screener", "technical-analysis", "lifeos"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Financial and Insurance Industry",
@@ -52,7 +52,7 @@ dependencies = [
 Homepage = "https://github.com/davdunc/tradekit"
 Repository = "https://github.com/davdunc/tradekit"
 Issues = "https://github.com/davdunc/tradekit/issues"
-"PAI Upstream" = "https://github.com/danielmiessler/Personal_AI_Infrastructure"
+"LifeOS Upstream" = "https://github.com/danielmiessler/LifeOS"
 
 [project.scripts]
 tradekit = "tradekit.cli:cli"
@@ -72,6 +72,9 @@ build-backend = "uv_build"
 [tool.ruff]
 line-length = 120
 target-version = "py314"
+# Vendored third-party packages (finvizfinance, ta) are upstream copies — they
+# are not linted or formatted against this project's rules. See _vendor/.
+extend-exclude = ["src/tradekit/_vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
