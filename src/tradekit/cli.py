@@ -2142,3 +2142,31 @@ def debate(ticker: str, period: str, level: str, no_persist: bool, source: str |
 
     if not no_persist:
         console.print(f"\n[dim]Transcript saved to ~/market_data/debates/[/dim]")
+
+
+@cli.command()
+@click.argument("date")
+@click.option("--out", default=None,
+              help="Output dir (default ~/.claude/LifeOS/USER/TRADING/Reviews/{DATE}-blotter/).")
+def blotter(date: str, out: str | None):
+    """Render a candlestick PNG per round-trip for DATE (YYYY-MM-DD).
+
+    Round-trips from falcon-trades DynamoDB; 1-min bars (premarket + RTH) from
+    Massive flat files. Output PNGs are meant to be embedded in the Notion EOD review.
+    """
+    from pathlib import Path
+
+    from tradekit.reports.blotter import render_blotter
+
+    out_dir = out or str(
+        Path(os.environ.get("MARKET_DATA_DIR", Path.home() / "market_data"))
+        / "blotter" / date
+    )
+    console.print(f"[bold]Rendering round-trip blotter for {date}...[/bold]")
+    paths = render_blotter(date, out_dir)
+    if not paths:
+        console.print("[yellow]No round-trips found (or DynamoDB unreachable).[/yellow]")
+        return
+    console.print(f"[green]Rendered {len(paths)} charts → {out_dir}[/green]")
+    for p in paths:
+        console.print(f"  [dim]{p.name}[/dim]")
