@@ -17,7 +17,7 @@ integration consumer of the shared contracts). A pointer copy sits at the
 | Repo | Role | Runtime | Primary storage |
 |------|------|---------|-----------------|
 | [`davdunc/falcon`](https://github.com/davdunc/falcon) | Morning pipeline — scan gappers, pivots, grade, build game plan, post | AWS serverless (Step Functions + Lambda, "Arbol" passthrough) | DynamoDB `falcon-state` (provisioned; see gaps) |
-| [`davdunc/tradekit`](https://github.com/davdunc/tradekit) | Analytical CLI — pre-market scans, S/R levels, indicators, scoring, group rotation, bull/bear debates, weekly review | Local Python 3.14 CLI | Local files (`~/market_data/`, `~/.falcon/falcon.db` read) |
+| [`davdunc/tradekit`](https://github.com/davdunc/tradekit) | Analytical CLI — pre-market scans, S/R levels, indicators, scoring, group rotation, bull/bear debates, weekly review | Local Python 3.14 CLI | Local files (`$XDG_DATA_HOME/tradekit/`, falcon DB read-only) |
 | [`davdunc/falcon-stats`](https://github.com/davdunc/falcon-stats) | Post-trade statistics — round-trips, R-multiples, win rate, expectancy, drawdown | Local Python 3.11 CLI | DynamoDB `falcon-trades` + parquet export (draft) |
 
 ---
@@ -30,8 +30,8 @@ misconception. falcon-stats ingests broker execution data.)
 
 | # | Contract | Producer | Consumer | Medium | Status |
 |---|----------|----------|----------|--------|--------|
-| C1 | **Screen runs** | falcon | tradekit | local SQLite `~/.falcon/falcon.db` (`screen_runs`, `screen_results`) | ✅ Satisfied as of falcon `shared/sqlite_store.py` (was a gap — see below) |
-| C2 | **Trade_Review tree** | tradekit writes `news.json`; falcon-stats reads `Trades.csv`/`Orders.csv` | — | `~/Trade_Review/<YYYY-MM>/<YYYY-MM-DD>/` | ⚠️ Shared parent dir only — **different files**, no direct data dependency |
+| C1 | **Screen runs** | falcon | tradekit | local SQLite `$XDG_DATA_HOME/falcon/falcon.db`, legacy `~/.falcon/falcon.db` (`screen_runs`, `screen_results`) | ✅ Satisfied as of falcon `shared/sqlite_store.py` (was a gap — see below) |
+| C2 | **Trade_Review tree** | tradekit writes `news.json`; falcon-stats reads `Trades.csv`/`Orders.csv` | — | `$XDG_DATA_HOME/trade-review/<YYYY>/<MM>/<YYYY-MM-DD>/` | ⚠️ Shared parent dir only — **different files**, no direct data dependency |
 | C3 | **Round-trip store** | falcon-stats | (parquet consumers / ML) | DynamoDB `falcon-trades`; parquet export | 🚧 Parquet export is draft (falcon-stats spec 001) |
 
 ### C1 — the falcon → tradekit screen-run contract
@@ -65,7 +65,7 @@ Run it locally to feed tradekit:
 ```bash
 # from a falcon checkout, given a pipeline result JSON
 python -m shared.sqlite_store result.json --strategy morning
-# → writes ~/.falcon/falcon.db ; then:
+# → writes falcon's SQLite DB ; then:
 tradekit weekly-review --from-falcon --falcon-strategy morning
 ```
 
@@ -102,8 +102,12 @@ columns record which version of each contract that combo implements.
 
 - **C1.v1** — `screen_runs(id, strategy_name, executed_at)` +
   `screen_results(run_id, symbol, rank)`; `executed_at` = naive-local ISO 8601.
-- **C2.v1** — `~/Trade_Review/<YYYY-MM>/<YYYY-MM-DD>/` day directories;
+- **C2.v1** — `~/Trade_Review/<YYYY>/<MM>/<YYYY-MM-DD>/` day directories;
   tradekit writes `news.json`, falcon-stats reads `Trades.csv` / `Orders.csv`.
+- **C2.v2** — same tree relocated to `$XDG_DATA_HOME/trade-review/`
+  (`~/.local/share/trade-review/`). tradekit reads either location; falcon-stats
+  must opt in before this becomes the only one. See
+  [ADR 0001](adr/0001-xdg-base-directories.md).
 
 ---
 
