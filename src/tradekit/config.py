@@ -9,6 +9,8 @@ import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
+from tradekit.paths import cache_dir as _default_cache_dir
+
 ET = ZoneInfo("America/New_York")
 
 
@@ -30,15 +32,16 @@ def _project_root() -> Path:
 PROJECT_ROOT = _project_root()
 
 
-def _resolve_env_files() -> list[str]:
-    """Build the .env load chain.
-
-    Pydantic-settings loads files in order, with later files overriding earlier
-    ones. Precedence (lowest → highest):
+def env_file_candidates() -> list[Path]:
+    """Build the .env load chain, in precedence order (lowest → highest).
 
         1. ./.env                 — project-local standalone
         2. ~/.claude/.env         — Claude Code default
         3. $PAI_DIR/.env          — PAI ecosystem shared config
+
+    Public because it is the only sanctioned way to locate credentials on disk.
+    Anything that needs a key should search this chain rather than reaching into
+    a sibling repository's checkout, which is not portable across machines.
     """
     candidates: list[Path] = [
         PROJECT_ROOT / ".env",
@@ -48,14 +51,19 @@ def _resolve_env_files() -> list[str]:
     if pai_dir:
         candidates.append(Path(os.path.expandvars(pai_dir)).expanduser() / ".env")
     seen: set[str] = set()
-    ordered: list[str] = []
+    ordered: list[Path] = []
     for p in candidates:
         key = str(p)
         if key in seen:
             continue
         seen.add(key)
-        ordered.append(key)
+        ordered.append(p)
     return ordered
+
+
+def _resolve_env_files() -> list[str]:
+    """String form of ``env_file_candidates`` for pydantic-settings."""
+    return [str(p) for p in env_file_candidates()]
 
 
 def shared_env_path() -> Path:
@@ -85,7 +93,7 @@ class DataSettings(BaseSettings):
     finviz_api_key: str = ""
     yahoo_cache_ttl_minutes: int = 5
     finviz_cache_ttl_minutes: int = 10
-    cache_dir: Path = Path.home() / ".tradekit" / "cache"
+    cache_dir: Path = Field(default_factory=_default_cache_dir)
     backtest_access_key: str = ""
     backtest_secret_key: str = ""
     backtest_bucket: str = "flatfiles"

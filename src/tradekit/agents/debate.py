@@ -20,8 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from tradekit.agents.inference import call as inference_call
-
-DEFAULT_TRANSCRIPT_DIR = Path.home() / "market_data" / "debates"
+from tradekit.paths import debate_dir
 
 # ---------- prompts ---------------------------------------------------------
 
@@ -137,7 +136,7 @@ async def bull_bear_debate(
                  the context, the better the debate.
         level: "fast" (haiku), "standard" (sonnet), "smart" (opus)
         persist: if True, write the full transcript to disk
-        transcript_dir: override default ~/market_data/debates/
+        transcript_dir: override the resolved debate directory (see tradekit.paths)
     """
     user = _user_prompt(ticker, context)
 
@@ -183,7 +182,7 @@ async def bull_bear_debate(
     )
 
     if persist:
-        out_dir = transcript_dir or DEFAULT_TRANSCRIPT_DIR
+        out_dir = transcript_dir or debate_dir()
         out_dir.mkdir(parents=True, exist_ok=True)
         slug = result.timestamp.replace(":", "").replace("-", "")[:15]
         path = out_dir / f"{ticker}_{slug}.json"
