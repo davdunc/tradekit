@@ -25,7 +25,7 @@ input and the most-consumed output.
 
 **Written by:** `tradekit groups` ([cli.py:1519](../src/tradekit/cli.py#L1519)) and
 `tradekit weekly-review` ([cli.py:1716](../src/tradekit/cli.py#L1716))
-**Path:** `~/market_data/groups_<YYYY-MM-DD>.json`
+**Path:** `$XDG_DATA_HOME/tradekit/groups_<YYYY-MM-DD>.json` (default `~/.local/share/tradekit/`)
 
 ### Top-level shape
 
@@ -81,7 +81,7 @@ Full bull / bear / judge debate for a single ticker, persisted for replay and ba
 
 **Written by:** `bull_bear_debate(..., persist=True)`
 ([debate.py:188](../src/tradekit/agents/debate.py#L188)) — invoked by `weekly-review --with-debates`
-**Path:** `~/market_data/debates/<TICKER>_<TIMESTAMP>.json`
+**Path:** `$XDG_DATA_HOME/tradekit/debates/<TICKER>_<TIMESTAMP>.json`
 (timestamp slug = first 15 chars of the UTC ISO timestamp with `:` and `-` removed)
 
 ### DebateResult
@@ -159,6 +159,6 @@ JSON for data.
 
 | Output                | Path                                                          | Format             |
 |-----------------------|---------------------------------------------------------------|--------------------|
-| Group rotation        | `~/market_data/groups_<YYYY-MM-DD>.json`                      | pretty JSON object |
-| Debate transcript     | `~/market_data/debates/<TICKER>_<TS>.json`                    | pretty JSON object |
+| Group rotation        | `$XDG_DATA_HOME/tradekit/groups_<YYYY-MM-DD>.json`            | pretty JSON object |
+| Debate transcript     | `$XDG_DATA_HOME/tradekit/debates/<TICKER>_<TS>.json`          | pretty JSON object |
 | Weekly review         | `~/.claude/MEMORY/WORK/<YYYYMMDD>_weekly-review/REVIEW.md`    | markdown           |

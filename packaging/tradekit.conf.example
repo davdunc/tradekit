@@ -14,8 +14,9 @@
 # One of: yahoo (default), massive, finviz, backtest
 # data_source = yahoo
 
-# Where local market_data files (debates/, risk_metrics_*.json, etc.) live.
-# data_dir = ~/market_data
+# Where durable output (debates/, groups_*.json, risk_metrics_*.json) lives.
+# Defaults to $XDG_DATA_HOME/tradekit. Override with $TRADEKIT_DATA_DIR.
+# data_dir = ~/.local/share/tradekit
 
 # ─── API keys (read from env to keep secrets out of files) ────────────────────
 # These are NOT set here. Put them in ~/.env or your shell profile:
@@ -35,9 +36,11 @@
 # debate_level = standard
 
 # Where bull/bear/judge transcripts persist for replay scoring.
-# debate_dir = ~/market_data/debates
+# debate_dir = ~/.local/share/tradekit/debates
 
 # ─── Falcon screener integration ──────────────────────────────────────────────
 
-# Path to the Falcon screener SQLite DB (~/Projects/falcon writes here).
-# falcon_db = ~/.falcon/falcon.db
+# Path to the Falcon screener SQLite DB. falcon owns this file; tradekit only
+# reads it. Resolution order: $FALCON_DB, then $XDG_DATA_HOME/falcon/falcon.db,
+# then legacy ~/.falcon/falcon.db — whichever exists.
+# falcon_db = ~/.local/share/falcon/falcon.db

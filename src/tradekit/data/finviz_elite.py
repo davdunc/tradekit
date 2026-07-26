@@ -54,10 +54,14 @@ class FinvizEliteConfig:
     def from_env(cls) -> "FinvizEliteConfig | None":
         tok = os.getenv("FINVIZ_AUTH_TOKEN")
         if not tok:
-            # Fallback: read ~/Projects/falcon/.env (where it actually lives)
+            # Fall back to the shared .env chain. This used to read a hardcoded
+            # ~/Projects/falcon/.env, which only resolved on one machine and
+            # never under WSL, where $HOME is a different filesystem entirely.
             from pathlib import Path
 
-            for p in [Path.home() / "Projects/falcon/.env", Path.home() / ".env"]:
+            from tradekit.config import env_file_candidates
+
+            for p in [*env_file_candidates(), Path.home() / ".env"]:
                 if p.exists():
                     for line in p.read_text().splitlines():
                         if line.strip().startswith("FINVIZ_AUTH_TOKEN"):
@@ -76,7 +80,7 @@ class FinvizEliteProvider:
     def __init__(self, config: FinvizEliteConfig | None = None):
         self.config = config or FinvizEliteConfig.from_env()
         if not self.config:
-            raise RuntimeError("FINVIZ_AUTH_TOKEN not set in env or ~/Projects/falcon/.env")
+            raise RuntimeError("FINVIZ_AUTH_TOKEN not set in env or any .env on the shared load chain")
 
     def _pct(self, s: object) -> float:
         if not isinstance(s, str):

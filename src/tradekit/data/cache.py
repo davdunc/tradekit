@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from tradekit.paths import cache_dir as tradekit_cache_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -14,7 +16,7 @@ class DataCache:
     """TTL-based cache storing DataFrames as Parquet and metadata as JSON."""
 
     def __init__(self, cache_dir: Path | None = None):
-        self.cache_dir = cache_dir or (Path.home() / ".tradekit" / "cache")
+        self.cache_dir = cache_dir or tradekit_cache_dir()
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._meta_path = self.cache_dir / "_meta.json"
         self._meta = self._load_meta()

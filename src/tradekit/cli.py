@@ -9,6 +9,8 @@ import click
 from rich.console import Console
 
 from tradekit.config import get_settings, now_et, shared_env_path
+from tradekit.paths import data_dir as tradekit_data_dir
+from tradekit.paths import debate_dir, group_snapshot
 
 console = Console(force_terminal=True)
 logger = logging.getLogger("tradekit")
@@ -1559,7 +1561,12 @@ def init(env_file: Path | None, non_interactive: bool):
 )
 @click.option("--top", default=12, help="Top/bottom N for industry leaders/laggards.")
 @click.option("--push-notion", is_flag=True, help="Mirror summary to Notion TeamJaDaDa hub.")
-@click.option("--save", is_flag=True, default=True, help="Save full data to ~/market_data/groups_<DATE>.json.")
+@click.option(
+    "--save",
+    is_flag=True,
+    default=True,
+    help="Save full data to groups_<DATE>.json in tradekit's data dir.",
+)
 @click.option(
     "--diff",
     "diff_against",
@@ -1577,7 +1584,6 @@ def groups(group_type: str, top: int, push_notion: bool, save: bool, diff_agains
     """
     import json
     from datetime import datetime
-    from pathlib import Path
 
     from tradekit.data.finviz_elite import FinvizEliteProvider
 
@@ -1632,16 +1638,16 @@ def groups(group_type: str, top: int, push_notion: bool, save: bool, diff_agains
     # Save snapshot
     today_iso = datetime.now().strftime("%Y-%m-%d")
     if save:
-        out_path = Path.home() / "market_data" / f"groups_{today_iso}.json"
+        out_path = group_snapshot(today_iso)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(out, indent=2, default=str))
         console.print(f"\n[dim]Saved: {out_path}[/dim]")
 
     # Diff against a prior snapshot
     if diff_against:
-        market_data = Path.home() / "market_data"
+        data_home = tradekit_data_dir()
         if diff_against == "auto":
-            files = sorted(market_data.glob("groups_*.json"))
+            files = sorted(data_home.glob("groups_*.json"))
             files = [f for f in files if today_iso not in f.name]
             if not files:
                 console.print("[yellow]No prior snapshots found for --diff auto[/yellow]")
@@ -1651,7 +1657,7 @@ def groups(group_type: str, top: int, push_notion: bool, save: bool, diff_agains
                 prior = json.loads(prior_path.read_text())
                 _print_diff(out, prior, diff_metric, top)
         else:
-            prior_path = market_data / f"groups_{diff_against}.json"
+            prior_path = data_home / f"groups_{diff_against}.json"
             if not prior_path.exists():
                 console.print(f"[yellow]No snapshot at {prior_path}[/yellow]")
             else:
@@ -1730,7 +1736,7 @@ def _push_groups_to_notion(data: dict[str, list[dict]]) -> None:
 @click.option("--tickers", default="", help="Comma-separated watchlist tickers (e.g. 'AAPL,MSFT,NVDA').")
 @click.option("--tickers-file", type=click.Path(exists=True), help="Path to a newline-delimited ticker file.")
 @click.option(
-    "--from-falcon", is_flag=True, default=False, help="Pull tickers from the Falcon screener DB (~/.falcon/falcon.db)."
+    "--from-falcon", is_flag=True, default=False, help="Pull tickers from the Falcon screener DB (see $FALCON_DB)."
 )
 @click.option(
     "--falcon-strategy",
@@ -1746,7 +1752,10 @@ def _push_groups_to_notion(data: dict[str, list[dict]]) -> None:
 @click.option("--falcon-days", default=7, help="Lookback days for --falcon-mode top.")
 @click.option("--falcon-limit", default=20, help="Max symbols to pull from Falcon.")
 @click.option(
-    "--falcon-db", type=click.Path(), default=None, help="Override path to falcon.db (default: ~/.falcon/falcon.db)."
+    "--falcon-db",
+    type=click.Path(),
+    default=None,
+    help="Override path to falcon.db (default: $XDG_DATA_HOME/falcon/falcon.db).",
 )
 @click.option(
     "--with-debates", "n_debates", default=0, help="Run bull/bear debates on top-N tickers by |RS spread|. 0 = skip."
@@ -1799,10 +1808,11 @@ def weekly_review(
     # Resolve tickers — priority: --from-falcon > --tickers-file > --tickers > default
     ticker_list: list[str] = []
     if from_falcon:
-        from tradekit.data.falcon import DEFAULT_DB_PATH, FalconDBNotFound, FalconReader
+        from tradekit.data.falcon import FalconDBNotFound, FalconReader
 
         try:
-            reader = FalconReader(db_path=Path(falcon_db) if falcon_db else DEFAULT_DB_PATH)
+            # No db_path -> FalconReader resolves it (contract C1; see tradekit.paths)
+            reader = FalconReader(db_path=Path(falcon_db)) if falcon_db else FalconReader()
             if falcon_mode == "top":
                 top = reader.get_top_symbols(
                     strategy_name=falcon_strategy,
@@ -1858,12 +1868,12 @@ def weekly_review(
         "industry": fp.get_group("industry").to_dict("records"),
         "country": fp.get_group("country").to_dict("records"),
     }
-    snap_path = Path.home() / "market_data" / f"groups_{today_iso}.json"
+    snap_path = group_snapshot(today_iso)
     snap_path.parent.mkdir(parents=True, exist_ok=True)
     snap_path.write_text(json.dumps(groups_data, indent=2, default=str))
 
-    market_data = Path.home() / "market_data"
-    prior_files = sorted([f for f in market_data.glob("groups_*.json") if today_iso not in f.name])
+    data_home = tradekit_data_dir()
+    prior_files = sorted([f for f in data_home.glob("groups_*.json") if today_iso not in f.name])
     sector_diff: list[dict] = []
     industry_diff: list[dict] = []
     diff_label = ""
@@ -2179,7 +2189,6 @@ def rs(tickers: tuple[str, ...], top: int):
     """
     import json
     from datetime import datetime
-    from pathlib import Path
 
     from tradekit.data.finviz_elite import FinvizEliteProvider, compute_rs_spread
 
@@ -2187,7 +2196,7 @@ def rs(tickers: tuple[str, ...], top: int):
 
     # Get today's industry snapshot (cached or live)
     today_iso = datetime.now().strftime("%Y-%m-%d")
-    snap_path = Path.home() / "market_data" / f"groups_{today_iso}.json"
+    snap_path = group_snapshot(today_iso)
     if snap_path.exists():
         groups_data = json.loads(snap_path.read_text())
         if "industry" not in groups_data:
@@ -2247,7 +2256,7 @@ def debate(ticker: str, period: str, level: str, no_persist: bool, source: str |
 
     Fetches real context (price, ATR, RVOL, levels, recent OHLC) from the configured
     data provider, then runs parallel bull/bear analyst agents and a judge agent.
-    Persists full transcript to ~/market_data/debates/ unless --no-persist.
+    Persists full transcript to tradekit's debates dir unless --no-persist.
     """
     import asyncio
 
@@ -2339,4 +2348,4 @@ def debate(ticker: str, period: str, level: str, no_persist: bool, source: str |
         console.print(f"  [dim]judge latency {j.latency_ms}ms[/dim]")
 
     if not no_persist:
-        console.print("\n[dim]Transcript saved to ~/market_data/debates/[/dim]")
+        console.print(f"\n[dim]Transcript saved to {debate_dir()}[/dim]")
