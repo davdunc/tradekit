@@ -28,6 +28,7 @@ dependencies = [
     # Analysis
     "pandas>=2.0",
     "numpy",
+    "matplotlib>=3.11.1",   # round-trip blotter PNG rendering
     # Config and CLI
     "pydantic-settings>=2.0",
     "pyyaml",
