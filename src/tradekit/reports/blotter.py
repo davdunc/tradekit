@@ -174,14 +174,16 @@ def _render_one(rt: RoundTrip, bars: list, out_path: Path) -> Path:
                     (x - width / 2, min(o, c)),
                     width,
                     max(abs(c - o), 0.001),
-                    facecolor=col, edgecolor=col, alpha=0.9, zorder=3,
+                    facecolor=col,
+                    edgecolor=col,
+                    alpha=0.9,
+                    zorder=3,
                 )
             )
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz=ET))
         ax.xaxis.set_major_locator(mdates.AutoDateLocator())
     else:
-        ax.text(0.5, 0.5, "no bars in window", color=DIM, ha="center",
-                va="center", transform=ax.transAxes, fontsize=8)
+        ax.text(0.5, 0.5, "no bars in window", color=DIM, ha="center", va="center", transform=ax.transAxes, fontsize=8)
 
     # entry / exit markers + level lines
     ax.axhline(rt.avg_entry, color=CYAN, lw=0.7, alpha=0.5, zorder=1)
@@ -200,15 +202,21 @@ def _render_one(rt: RoundTrip, bars: list, out_path: Path) -> Path:
     r_txt = "R n/a" if rt.r_multiple is None else f"{rt.r_multiple:+.2f}R"
     pnl_txt = f"{'-$' if rt.pnl < 0 else '+$'}{abs(rt.pnl):,.2f}"
     ax.set_title(
-        f"#{rt.idx}  {rt.symbol}  {rt.side}  {rt.shares:g}sh   "
-        f"{pnl_txt}  {r_txt}",
-        color=edge if not rt.is_winner else UP, fontsize=8, fontweight="bold",
-        loc="left", pad=6,
+        f"#{rt.idx}  {rt.symbol}  {rt.side}  {rt.shares:g}sh   {pnl_txt}  {r_txt}",
+        color=edge if not rt.is_winner else UP,
+        fontsize=8,
+        fontweight="bold",
+        loc="left",
+        pad=6,
     )
-    fig.text(0.99, 0.02,
-             f"{rt.entry_time:%H:%M:%S} → {rt.exit_time:%H:%M:%S} ET  "
-             f"{rt.avg_entry:g}→{rt.avg_exit:g}",
-             color=DIM, fontsize=6, ha="right")
+    fig.text(
+        0.99,
+        0.02,
+        f"{rt.entry_time:%H:%M:%S} → {rt.exit_time:%H:%M:%S} ET  {rt.avg_entry:g}→{rt.avg_exit:g}",
+        color=DIM,
+        fontsize=6,
+        ha="right",
+    )
     fig.tight_layout(pad=0.6)
     fig.savefig(out_path, facecolor=BG, bbox_inches="tight")
     plt.close(fig)
