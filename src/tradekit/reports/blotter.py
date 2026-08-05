@@ -34,7 +34,7 @@ import matplotlib.dates as mdates  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.patches import Rectangle  # noqa: E402
 
-from tradekit.config import get_settings  # noqa: E402
+from tradekit.config import env_file_candidates, get_settings  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +91,15 @@ def fetch_round_trips(
     )
     items = resp.get("Items", [])
     rts: list[RoundTrip] = []
+    skipped_open = 0
     for it in items:
+        # A position still open at the end of the session has no exit — no exit_time,
+        # avg_exit 0, pnl 0. It is not a round-trip and cannot be charted as one.
+        # Skip it rather than raising KeyError, but count it: silently dropping rows
+        # would make a partial blotter look complete.
+        if "exit_time" not in it:
+            skipped_open += 1
+            continue
         r = it.get("r_multiple")
         rts.append(
             RoundTrip(
@@ -108,18 +116,58 @@ def fetch_round_trips(
                 is_winner=bool(it.get("is_winner", float(it.get("pnl", 0)) >= 0)),
             )
         )
+    if skipped_open:
+        logger.warning(
+            "%s: skipped %d position(s) still open at session end — not round-trips",
+            date,
+            skipped_open,
+        )
     rts.sort(key=lambda x: (x.symbol, x.entry_time))
     for i, rt in enumerate(rts, 1):
         rt.idx = i
     return rts
 
 
+def _env_credential(name: str) -> str:
+    """Read ``name`` from the process env, falling back to the shared .env chain.
+
+    The settings fields are ``backtest_access_key`` / ``backtest_secret_key``, but the
+    shared .env stores these under the vendor's own ``MASSIVE_S3_*`` names. Pydantic maps
+    a field to an env var by field name, so it never sees them — and loading a .env into
+    pydantic settings does **not** populate ``os.environ``, so a plain ``os.environ.get``
+    fallback misses too. Both lookups therefore returned empty and the call failed as an
+    unauthenticated ``ClientError``, which the handler below reports as a bare exception
+    type (CWE-209). The result was a silent, blank-charted blotter.
+
+    ``env_file_candidates()`` is the sanctioned way to locate credentials on disk, so use
+    it rather than adding a pydantic alias — aliases resolve inconsistently against
+    ``env_file`` sources.
+    """
+    val = os.environ.get(name, "")
+    if val:
+        return val
+    for path in env_file_candidates():
+        try:
+            if not path.exists():
+                continue
+            for line in path.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, raw = line.partition("=")
+                if key.strip().removeprefix("export ") == name:
+                    return raw.split("  #")[0].strip().strip("\"'")
+        except OSError:
+            continue
+    return ""
+
+
 def fetch_minute_bars(symbols: set[str], date: str, *, settings=None):
     """Return {symbol: list[(dt_et, o, h, l, c)]} from the Massive minute flat file."""
     settings = settings or get_settings()
     d = settings.data
-    ak = d.backtest_access_key or os.environ.get("MASSIVE_S3_ACCESS_KEY", "")
-    sk = d.backtest_secret_key or os.environ.get("MASSIVE_S3_SECRET_KEY", "")
+    ak = d.backtest_access_key or _env_credential("MASSIVE_S3_ACCESS_KEY")
+    sk = d.backtest_secret_key or _env_credential("MASSIVE_S3_SECRET_KEY")
     y, m, _ = date.split("-")
     key = f"us_stocks_sip/minute_aggs_v1/{y}/{m}/{date}.csv.gz"
     try:
