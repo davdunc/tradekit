@@ -25,7 +25,7 @@ until we reach a stable release.
 ## Never commit secrets
 
 `tradekit` is designed around a **single shared `.env`** (either
-`$PAI_DIR/.env` when inside PAI, or a project-local `.env` standalone). The
+`$PAI_DIR/.env` when inside LifeOS, or a project-local `.env` standalone). The
 project's `.gitignore` protects both.
 
 Rules for contributors and users:

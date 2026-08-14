@@ -11,6 +11,8 @@ import requests
 from bs4 import BeautifulSoup
 from finvizfinance.screener.overview import Overview
 
+from tradekit.paths import state_dir, trade_review_day_dir
+
 logger = logging.getLogger(__name__)
 
 _BROWSER_UA = (
@@ -149,9 +151,9 @@ class FinvizProvider:
             return []
 
         # Save debug HTML on first run for selector refinement
-        cache_dir = Path.home() / ".tradekit" / "cache"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        debug_path = cache_dir / "finviz_news_debug.html"
+        debug_dir = state_dir()
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        debug_path = debug_dir / "finviz_news_debug.html"
         debug_path.write_text(resp.text, encoding="utf-8")
         logger.debug("Saved debug HTML to %s", debug_path)
 
@@ -164,13 +166,7 @@ def _trade_review_day_dir(date: datetime.date | None = None) -> Path:
 
     if date is None:
         date = now_et().date()
-    base = Path(
-        os.environ.get(
-            "TRADE_REVIEW_PATH",
-            str(Path.home() / "OneDrive" / "Documents" / "Trade_Review"),
-        )
-    )
-    return base / str(date.year) / f"{date.month:02d}" / str(date)
+    return trade_review_day_dir(date.year, date.month, str(date))
 
 
 def save_news(items: list[dict], date: datetime.date | None = None) -> Path:

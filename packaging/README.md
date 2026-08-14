@@ -102,7 +102,7 @@ declaration to a `Requires:` line.
 ## Systemd timer
 
 The `tradekit-groups-daily.timer` is installed as a **user** unit (not system)
-because it writes to `~/market_data/`. To activate after install:
+because it writes to `$XDG_DATA_HOME/tradekit/`. To activate after install:
 
 ```bash
 systemctl --user daemon-reload

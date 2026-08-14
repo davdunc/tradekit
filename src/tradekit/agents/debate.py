@@ -14,14 +14,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from tradekit.agents.inference import call as inference_call
-
-DEFAULT_TRANSCRIPT_DIR = Path.home() / "market_data" / "debates"
+from tradekit.paths import debate_dir
 
 # ---------- prompts ---------------------------------------------------------
 
@@ -67,6 +66,7 @@ Output STRICT JSON only, no prose, no markdown fences:
 
 # ---------- data classes ---------------------------------------------------
 
+
 @dataclass
 class AgentCase:
     role: str  # "bull" | "bear"
@@ -104,6 +104,7 @@ class DebateResult:
 
 # ---------- main entry ----------------------------------------------------
 
+
 async def _run_side(role: str, system: str, user: str, level: str) -> AgentCase:
     res = await inference_call(system, user, level=level, expect_json=True, timeout_s=60)
     return AgentCase(
@@ -135,7 +136,7 @@ async def bull_bear_debate(
                  the context, the better the debate.
         level: "fast" (haiku), "standard" (sonnet), "smart" (opus)
         persist: if True, write the full transcript to disk
-        transcript_dir: override default ~/market_data/debates/
+        transcript_dir: override the resolved debate directory (see tradekit.paths)
     """
     user = _user_prompt(ticker, context)
 
@@ -181,7 +182,7 @@ async def bull_bear_debate(
     )
 
     if persist:
-        out_dir = transcript_dir or DEFAULT_TRANSCRIPT_DIR
+        out_dir = transcript_dir or debate_dir()
         out_dir.mkdir(parents=True, exist_ok=True)
         slug = result.timestamp.replace(":", "").replace("-", "")[:15]
         path = out_dir / f"{ticker}_{slug}.json"

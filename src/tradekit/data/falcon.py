@@ -1,6 +1,8 @@
 """Read tickers from the Falcon screener's SQLite database.
 
-Falcon (~/Projects/falcon/) persists its screening results to ~/.falcon/falcon.db.
+Falcon persists its screening results to a SQLite database that we only ever
+read (contract C1). ``tradekit.paths.falcon_db`` resolves its location; falcon
+owns the file, so both the XDG and legacy paths are tolerated.
 We read the most recent runs and surface the tickers as a watchlist for tradekit.
 
 Two access modes:
@@ -12,11 +14,11 @@ Two access modes:
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-DEFAULT_DB_PATH = Path.home() / ".falcon" / "falcon.db"
+from tradekit.paths import falcon_db
 
 
 class FalconDBNotFound(FileNotFoundError):
@@ -25,13 +27,13 @@ class FalconDBNotFound(FileNotFoundError):
 
 @dataclass
 class FalconReader:
-    db_path: Path = DEFAULT_DB_PATH
+    # Resolved per-instance rather than at import so the location stays
+    # responsive to $FALCON_DB and to falcon migrating its own storage.
+    db_path: Path = field(default_factory=falcon_db)
 
     def _conn(self) -> sqlite3.Connection:
         if not self.db_path.exists():
-            raise FalconDBNotFound(
-                f"No Falcon DB at {self.db_path}. Run `falcon screen ...` to populate it first."
-            )
+            raise FalconDBNotFound(f"No Falcon DB at {self.db_path}. Run `falcon screen ...` to populate it first.")
         return sqlite3.connect(str(self.db_path))
 
     def get_top_symbols(

@@ -7,38 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-14
+
 ### Added
 
-- **Canonical reporting layer** (`tradekit.reporting`) — one schema/grade
-  ladder/risk language so game-plan and report-card results are directly
-  comparable day over day:
-  - `grading` — a single A/B/C/D/F ladder shared by setup scores *and*
-    executed-trade grades, plus one fixed discipline rubric (sums to 10).
-  - `runits` — R-units as a first-class risk language (`+2.3R ($644)`), with
-    honest `R n/a` when `planned_stop` is unknown.
-  - `schema` — versioned, document-oriented records (`GamePlanRecord`,
-    `DailyReportCard`) that map 1:1 onto a DynamoDB item (`pk`/`sk`) and
-    archive verbatim to object storage (`record_type/scope/date.json`).
-  - `store` — `FileReportStore` (object-storage-mirroring local backend) and
-    `DynamoReportStore`, behind one `ReportStore` contract.
-  - `aggregate`/`render` — multi-day and weekly views with one canonical
-    column set, read from records instead of re-parsed prose.
-  - `ingest` — assemble a `DailyReportCard` from deterministic `falcon-stats`
-    output (carried verbatim, alias-tolerant) plus the unstructured trade
-    narrative (grades, discipline, patterns, lessons), and persist it.
-  - `tradekit cards {ingest,trend,weekly,show,export}` CLI.
-
-### Changed
-
-- `analysis/scoring.py` now grades on the shared canonical ladder (adds the
-  **D** rung it previously lacked), so a screener "C" and a review "C" mean the
-  same thing.
+- **Session-anchored VWAP** — `analysis.volume.compute_session_vwap()` computes
+  the New York session VWAP (resets at the 09:30 ET open, excludes pre-market),
+  distinct from the existing rolling `compute_vwap`
+- **15-Minute VWAP Sandwich detector** — `analysis.setups.detect_vwap_sandwich()`
+  flags when the 9-EMA and 34-SMA close on opposite sides of session VWAP on 15m
+  bars; direction-agnostic (bullish/bearish inferred from which average leads)
 
 ## [0.1.0] — 2026-04-22
 
 Initial release. Extracted from the `davdunc/Alvin` monorepo into a
 standalone package designed to integrate with Daniel Miessler's
-[Personal_AI_Infrastructure (PAI)][pai].
+[LifeOS][pai] (formerly Personal AI Infrastructure / PAI).
 
 ### Added
 
@@ -69,7 +53,8 @@ standalone package designed to integrate with Daniel Miessler's
 - Requires Python 3.14+
 - Methodology references [SMB Capital][smb]'s published playbook material
 
-[pai]: https://github.com/danielmiessler/Personal_AI_Infrastructure
+[pai]: https://github.com/danielmiessler/LifeOS
 [smb]: https://www.smbtraining.com/
-[Unreleased]: https://github.com/davdunc/tradekit/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/davdunc/tradekit/compare/0.2.0...HEAD
+[0.2.0]: https://github.com/davdunc/tradekit/releases/tag/0.2.0
 [0.1.0]: https://github.com/davdunc/tradekit/releases/tag/v0.1.0

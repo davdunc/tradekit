@@ -25,7 +25,7 @@ labels: bug
 - Python version: <!-- `python --version` -->
 - OS: <!-- macOS 14 / Ubuntu 24.04 / WSL2 etc. -->
 - Data source used: <!-- yahoo / massive / backtest -->
-- Running inside PAI? <!-- yes / no; if yes, PAI version -->
+- Running inside LifeOS? <!-- yes / no; if yes, LifeOS/PAI version -->
 
 ## Logs
 

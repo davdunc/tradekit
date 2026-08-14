@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from tradekit.analysis.indicators import (
     compute_all_indicators,
@@ -17,7 +18,8 @@ from tradekit.analysis.levels import (
     find_support_resistance,
 )
 from tradekit.analysis.scoring import compute_composite_score, score_momentum, score_trend
-from tradekit.analysis.volume import compute_relative_volume, compute_volume_profile
+from tradekit.analysis.setups import detect_vwap_sandwich
+from tradekit.analysis.volume import compute_relative_volume, compute_session_vwap, compute_volume_profile
 
 
 def _make_ohlcv(n: int = 100, seed: int = 42) -> pd.DataFrame:
@@ -154,3 +156,83 @@ class TestVolume:
         assert len(profile) == 10
         assert "price_level" in profile.columns
         assert "volume" in profile.columns
+
+
+def _make_intraday(closes: np.ndarray, start: str = "2026-06-01 13:30", freq: str = "15min") -> pd.DataFrame:
+    """Synthetic intraday OHLCV. Index is tz-naive UTC (as Massive returns).
+
+    Default start 13:30 UTC == 09:30 ET (EDT, the RTH open) on a June weekday.
+    """
+    n = len(closes)
+    idx = pd.date_range(start, periods=n, freq=freq)
+    return pd.DataFrame(
+        {
+            "open": closes,
+            "high": closes + 0.25,
+            "low": closes - 0.25,
+            "close": closes,
+            "volume": np.full(n, 100_000.0),
+        },
+        index=idx,
+    )
+
+
+class TestSessionVWAP:
+    def test_first_session_bar_equals_typical_price(self):
+        df = _make_intraday(np.array([100.0, 101.0, 102.0]))
+        vwap = compute_session_vwap(df)
+        # First in-session bar: cumulative VWAP == that bar's typical price (h+l+c)/3
+        first = df.iloc[0]
+        assert vwap.iloc[0] == pytest.approx((first["high"] + first["low"] + first["close"]) / 3.0)
+
+    def test_premarket_bars_are_nan(self):
+        # 13:00 / 13:15 UTC == 09:00 / 09:15 ET (pre-market); 13:30 == 09:30 (RTH open).
+        df = _make_intraday(np.array([99.0, 100.0, 101.0]), start="2026-06-01 13:00")
+        vwap = compute_session_vwap(df)
+        assert np.isnan(vwap.iloc[0])  # 09:00 ET — pre-market, excluded
+        assert np.isnan(vwap.iloc[1])  # 09:15 ET — pre-market, excluded
+        assert vwap.iloc[2] == pytest.approx(101.0)  # 09:30 ET — first session bar
+
+    def test_vwap_resets_each_session(self):
+        day1 = _make_intraday(np.array([100.0, 100.0]), start="2026-06-01 13:30")
+        day2 = _make_intraday(np.array([200.0, 200.0]), start="2026-06-02 13:30")
+        df = pd.concat([day1, day2])
+        vwap = compute_session_vwap(df)
+        # Day 2's first bar must anchor to day 2, not carry day 1's ~100 level.
+        assert vwap.iloc[2] == pytest.approx(200.0)
+
+
+class TestSetups:
+    def test_detect_vwap_sandwich_keys(self):
+        df = _make_intraday(100 + np.cumsum(np.random.default_rng(1).normal(0, 0.5, 60)))
+        result = detect_vwap_sandwich(df, session_start="00:00", session_end="23:59")
+        assert set(result) == {"sandwich", "direction", "ema", "sma", "vwap", "close", "spread_pct", "detail"}
+        assert isinstance(result["sandwich"], bool)
+        assert result["direction"] in ("bullish", "bearish", None)
+
+    def test_detect_bullish_sandwich_on_reclaim(self):
+        # V-shape reclaim: high open -> sell off -> recover. Session VWAP (anchored at
+        # the high open) ends up BETWEEN a rising 9-EMA (above) and a lagging 34-SMA
+        # (below) -> bullish sandwich. A steady trend does NOT produce this.
+        closes = np.concatenate([np.linspace(120.0, 100.0, 20), np.linspace(100.0, 119.0, 20)])
+        df = _make_intraday(closes, start="2026-06-01 04:00")  # 00:00 ET, single session
+        result = detect_vwap_sandwich(df, session_start="00:00", session_end="23:59")
+        assert result["sandwich"] is True
+        assert result["direction"] == "bullish"
+        assert result["ema"] > result["vwap"] > result["sma"]
+
+    def test_detect_bearish_sandwich_on_breakdown(self):
+        # ^-shape breakdown: low open -> rally -> fade. 34-SMA (above) > VWAP > a
+        # falling 9-EMA (below) -> bearish sandwich.
+        closes = np.concatenate([np.linspace(100.0, 120.0, 20), np.linspace(120.0, 101.0, 20)])
+        df = _make_intraday(closes, start="2026-06-01 04:00")
+        result = detect_vwap_sandwich(df, session_start="00:00", session_end="23:59")
+        assert result["sandwich"] is True
+        assert result["direction"] == "bearish"
+        assert result["sma"] > result["vwap"] > result["ema"]
+
+    def test_insufficient_data_returns_no_sandwich(self):
+        df = _make_intraday(np.array([100.0, 101.0, 102.0]))  # < 34 bars for the SMA
+        result = detect_vwap_sandwich(df)
+        assert result["sandwich"] is False
+        assert result["direction"] is None
