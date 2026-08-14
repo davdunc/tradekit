@@ -31,10 +31,8 @@ from tradekit.reporting.schema import (
 )
 
 # Known DAS account ids → book kind. Override per call when ids differ.
-DEFAULT_ACCOUNT_KINDS: dict[str, AccountKind] = {
-    "1RB16917": AccountKind.LIVE,
-    "TR4425": AccountKind.SIM,
-}
+DEFAULT_ACCOUNT_KINDS: dict[str, AccountKind] = {}
+# Load account mappings from environment or config file instead of hardcoding
 
 # Tolerant field aliases for the falcon per-account stat object. First match wins.
 _FALCON_ALIASES: dict[str, tuple[str, ...]] = {
