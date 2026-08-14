@@ -1,6 +1,14 @@
-"""Composite scoring engine for ranking trade setups."""
+"""Composite scoring engine for ranking trade setups.
+
+Grades come from :mod:`tradekit.reporting.grading` so a setup's letter grade
+sits on the *same* A/B/C/D/F ladder as an executed trade's grade. Previously
+this module carried its own A/B/C/F scale (no D), which meant a "C" here and a
+"C" in the daily review were not comparable.
+"""
 
 import pandas as pd
+
+from tradekit.reporting.grading import grade_from_score
 
 
 def score_momentum(row: pd.Series) -> float:
@@ -141,15 +149,8 @@ def compute_composite_score(row: pd.Series, weights: dict[str, float] | None = N
     )
     total = round(total, 1)
 
-    # Grade: A (80+), B (65-79), C (50-64), F (<50)
-    if total >= 80:
-        grade = "A"
-    elif total >= 65:
-        grade = "B"
-    elif total >= 50:
-        grade = "C"
-    else:
-        grade = "F"
+    # Canonical ladder (A≥80, B≥65, C≥50, D≥35, F<35) — shared with trade grading.
+    grade = grade_from_score(total).value
 
     return {
         "total": total,
