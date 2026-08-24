@@ -541,6 +541,75 @@ def regime(source: str | None):
     console.print()
 
 
+@cli.command()
+@click.argument("tickers", nargs=-1, required=True)
+@click.option(
+    "--direction",
+    type=click.Choice(["long", "short"], case_sensitive=False),
+    default="long",
+    help="Intended trade direction the signals are tested against.",
+)
+@click.option("--sector", default=None, help="Override sector key (memory, semis, china, crypto).")
+@source_option
+def comps(tickers, direction: str, sector: str | None, source: str | None):
+    """Sector & overnight comps — Asia prices US chips six hours early.
+
+    Builds the five-signal premarket table per ticker (overnight comps,
+    sector ETF, inverse-ETF tell, index skew) and applies the rule:
+    3+ signals against the intended direction => counter-trend, reclaim
+    trigger required. Born from the 2026-08-24 MU review.
+    """
+    from rich.table import Table
+
+    from tradekit.analysis.comps import build_comps_report
+
+    provider = get_provider(source)
+    direction = direction.lower()
+
+    for ticker in tickers:
+        report = build_comps_report(provider, ticker, sector=sector)
+        if report is None:
+            console.print(
+                f"[yellow]{ticker.upper()}: no sector mapping — add it to "
+                f"TICKER_SECTOR in analysis/comps.py or pass --sector[/yellow]"
+            )
+            continue
+
+        table = Table(
+            title=f"{report.ticker} — {report.sector_label} sector & overnight comps",
+            show_lines=True,
+            pad_edge=True,
+        )
+        table.add_column("Signal", style="bold cyan")
+        table.add_column("Move", justify="right", width=9)
+        table.add_column("Read", width=9)
+        table.add_column("Detail")
+
+        for sig in report.signals:
+            if sig.move_pct is None:
+                move, read = "-", "[dim]n/a[/dim]"
+            else:
+                style = "red" if sig.bearish else "green" if sig.bearish is False else "white"
+                move = f"[{style}]{sig.move_pct:+.2f}%[/{style}]"
+                read = (
+                    "[red]bearish[/red]"
+                    if sig.bearish
+                    else "[green]bullish[/green]"
+                    if sig.bearish is False
+                    else "neutral"
+                )
+            table.add_row(sig.name, move, read, sig.detail)
+
+        console.print(table)
+        verdict = report.verdict(direction)
+        style = "red" if verdict.startswith("COUNTER") else "yellow" if verdict.startswith("CAUTION") else "green"
+        console.print(f"  [{style}]{verdict}[/{style}]")
+        console.print(
+            "  [dim]Manual check: is the ticker in this morning's Barron's/DJ "
+            "premarket movers column — and on which side?[/dim]\n"
+        )
+
+
 @cli.command("second-day")
 @click.option("--min-change", type=float, default=5.0, help="Minimum yesterday move %.")
 @click.option("--min-vol-ratio", type=float, default=1.5, help="Minimum volume ratio vs avg.")
