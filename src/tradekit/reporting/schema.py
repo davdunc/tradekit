@@ -22,7 +22,7 @@ remain interpretable.
 
 import re
 from enum import Enum
-from typing import ClassVar
+from typing import ClassVar, Self
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -294,7 +294,13 @@ class ReportDocument(BaseModel):
         return f"{self.record_type.lower()}/{self.scope()}/{self.date}.json"
 
     @classmethod
-    def from_item(cls, item: dict) -> "ReportDocument":
+    def from_item(cls, item: dict) -> Self:
+        """Rebuild a document from its stored item, dropping the index keys.
+
+        Typed as ``Self`` rather than ``ReportDocument`` so that
+        ``GamePlanRecord.from_item(...)`` is statically known to be a
+        ``GamePlanRecord``; callers would otherwise have to cast.
+        """
         data = {k: v for k, v in item.items() if k not in ("pk", "sk", "record_type")}
         return cls.model_validate(data)
 
