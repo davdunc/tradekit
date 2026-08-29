@@ -27,6 +27,9 @@ or as the data engine for a [LifeOS][pai] pack (formerly Personal AI Infrastruct
   rubric across game plan and review, persisted as document-oriented records
   (NoSQL-native, object-storage-archivable) so results are comparable day over
   day. See `tradekit cards --help` and `tradekit.reporting`.
+- **Discipline Workshop plans** — render the stored game plan in the format the
+  MyInvestingClub Discipline Workshop expects in-channel by 9:00 AM market time:
+  `tradekit cards gameplan --format dw`.
 
 ---
 
@@ -93,9 +96,18 @@ tradekit levels NVDA
 # Watchlist scan
 tradekit watchlist default
 
+# Today's game plan in Discipline Workshop post format
+tradekit cards gameplan --format dw
+
+# A specific day, with session risk limits appended, written to a file
+tradekit cards gameplan 2026-08-31 --max-trades 5 --r-dollars 280 --out plan.md
+
 # Interactive setup wizard (populates .env)
 tradekit init
 ```
+
+Prefer `--out` over shell redirection for the plan: `tradekit` prints a session
+banner on stdout, so `> plan.md` would capture that too.
 
 Run `tradekit --help` for the full command list.
 
