@@ -83,7 +83,7 @@ def default_account_kinds() -> dict[str, AccountKind]:
     try:
         with path.open("rb") as fh:
             table = tomllib.load(fh).get("accounts", {})
-    except OSError, tomllib.TOMLDecodeError:
+    except (OSError, tomllib.TOMLDecodeError):
         return {}
     out: dict[str, AccountKind] = {}
     for account, kind in table.items():
