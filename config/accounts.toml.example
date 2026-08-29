@@ -1,0 +1,17 @@
+# Account id → book kind. Copy to $XDG_CONFIG_HOME/tradekit/accounts.toml
+# (usually ~/.config/tradekit/accounts.toml) and fill in your own ids.
+#
+# This file is NEVER committed with real ids: broker account identifiers are
+# personal, and this repository is public. tradekit reads the mapping from your
+# user config or from $TRADEKIT_ACCOUNT_KINDS, never from the source tree.
+#
+# An account absent from this mapping is reported as UNMAPPED, not LIVE. That is
+# deliberate — a simulated book silently scored against live risk is the failure
+# this design exists to prevent.
+#
+# Equivalent environment form, which takes precedence:
+#   export TRADEKIT_ACCOUNT_KINDS="YOURLIVEID=LIVE,YOURSIMID=SIM"
+
+[accounts]
+# "YOURLIVEID" = "LIVE"
+# "YOURSIMID"  = "SIM"

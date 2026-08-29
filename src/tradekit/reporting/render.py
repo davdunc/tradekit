@@ -40,8 +40,12 @@ def _account_row(a: AccountPnL, config: RiskConfig | None) -> str:
     peak = f"{_money(a.peak_equity)} @ {a.peak_time}" if a.peak_equity is not None else "—"
     trough = f"{_money(a.trough_equity)} @ {a.trough_time}" if a.trough_equity is not None else "—"
     maxdd = f"{_money(a.max_drawdown)} @ {a.max_dd_time}" if a.max_drawdown is not None else "—"
+    # An unmapped account is labelled UNMAPPED, never LIVE. Reading a SIM book as
+    # live risk is the failure this guards against; a visibly wrong label is fine,
+    # a plausible wrong label is not.
+    label = f"{a.kind.value} ({a.account})" if a.kind else f"UNMAPPED ({a.account})"
     return (
-        f"| **{a.kind.value} ({a.account})** | {a.round_trips} | {wr_str} "
+        f"| **{label}** | {a.round_trips} | {wr_str} "
         f"| {_money(a.realized)} | {peak} | {trough} | {maxdd} | {a.streak or '—'} |"
     )
 
@@ -58,9 +62,16 @@ def render_daily_card(card: DailyReportCard, config: RiskConfig | None = None) -
     lines.append("")
     lines.append("| Account | Round-Trips | Win Rate | Realized | Peak Equity | Trough | Max DD | Streak |")
     lines.append("|---------|------------:|----------|---------:|-------------|--------|--------|--------|")
+    rendered: list[int] = []
     for kind in (AccountKind.LIVE, AccountKind.SIM):
         a = card.account(kind)
         if a:
+            rendered.append(id(a))
+            lines.append(_account_row(a, config))
+    # Accounts with no configured kind still get a row. Dropping them would hide
+    # real P&L behind a missing config entry.
+    for a in card.accounts:
+        if id(a) not in rendered:
             lines.append(_account_row(a, config))
     decided_w = sum(a.wins for a in card.accounts)
     decided_l = sum(a.losses for a in card.accounts)
