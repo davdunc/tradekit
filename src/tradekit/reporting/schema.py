@@ -54,6 +54,37 @@ class AccountKind(str, Enum):
     SIM = "SIM"
 
 
+class MarketCycle(str, Enum):
+    """The market-cycle call, using the Discipline Workshop's fixed vocabulary.
+
+    Identifying the cycle is the guidelines' first and most critical selection
+    step -- it decides whether the day is aggressive, defensive, or a sit-out.
+
+    * ``HOT`` -- multiple premarket runners holding into the open with volume
+      and money flow.
+    * ``IDEAL_SHORT`` -- runners failing with clear confirmation, bouncing
+      moderately into levels formed premarket.
+    * ``SLOW`` -- one failed runner, no bounces, attention rotating to
+      sub-dollar moves.
+    """
+
+    HOT = "HOT MARKET"
+    IDEAL_SHORT = "IDEAL FOR SHORT"
+    SLOW = "SLOW MARKET"
+
+
+class RiskLevel(str, Enum):
+    """Per-name risk tier shown in the Discipline Workshop watchlist table.
+
+    Driven primarily by float: an ultra-low-float name is HIGH regardless of how
+    clean the chart looks, because manipulation risk dominates the setup.
+    """
+
+    LOW = "LOW"
+    MODERATE = "MODERATE"
+    HIGH = "HIGH"
+
+
 # ── Shared building blocks ───────────────────────────────────────────────────
 
 
@@ -102,10 +133,46 @@ class TradePlan(BaseModel):
     intel_note: str = ""
     notes: str = ""
 
+    # -- Discipline Workshop fields -----------------------------------------
+    # The MIC plan format is "TICKER- L1 / L2 / L3, stop out X Float: Y Notes: ...",
+    # which needs three *ordered* entry lines plus a float, and (for the expanded
+    # watchlist table) price / sector / volume / risk tier. A single ``entry``
+    # cannot express the three-line ladder, hence ``entry_lines``.
+    entry_lines: list[float] = Field(default_factory=list)
+    price: float | None = None
+    sector: str = ""
+    volume: float | None = None
+    float_shares: float | None = None
+    risk_level: RiskLevel | None = None
+
     @field_validator("ticker")
     @classmethod
     def _upper(cls, v: str) -> str:
         return v.strip().upper()
+
+    def mic_entry_lines(self) -> list[float]:
+        """The ordered entry lines for the MIC plan format.
+
+        Preference order, first non-empty wins:
+
+        1. ``entry_lines`` -- set explicitly.
+        2. ``support`` / ``inflexion`` / ``resistance`` -- the level triplet the
+           screener already produces.
+        3. ``entry`` alone -- a one-line plan, rendered as-is rather than padded
+           out with invented levels.
+
+        Ordering follows direction: a LONG ladder ascends into strength, a SHORT
+        ladder descends into weakness. Returns ``[]`` when nothing is known so
+        callers can refuse to render the line instead of posting a partial plan.
+        """
+        if self.entry_lines:
+            return list(self.entry_lines)
+        triplet = [v for v in (self.support, self.inflexion, self.resistance) if v is not None]
+        if len(triplet) >= 2:
+            return sorted(triplet, reverse=self.direction is Direction.SHORT)
+        if self.entry is not None:
+            return [self.entry]
+        return []
 
 
 class TradeRecord(BaseModel):
@@ -244,6 +311,14 @@ class GamePlanRecord(ReportDocument):
     fresh_news: list[TradePlan] = Field(default_factory=list)
     second_day: list[TradePlan] = Field(default_factory=list)
     rules: list[str] = Field(default_factory=list)
+
+    # -- Discipline Workshop fields -----------------------------------------
+    # The MIC guidelines require a market-cycle call from a fixed vocabulary, a
+    # single declared direction for the day, and a separate "top runners"
+    # observation list (names with volume, whether or not they are being planned).
+    market_cycle: MarketCycle | None = None
+    bias: Direction | None = None
+    top_runners: list[TradePlan] = Field(default_factory=list)
 
     def all_tickers(self) -> list[str]:
         """Deduplicated plan tickers, thesis first — DAS Market Viewer order."""

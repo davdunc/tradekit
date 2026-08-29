@@ -6,6 +6,7 @@ import pytest
 
 from tradekit.reporting import (
     DISCIPLINE_MAX,
+    DW_CLOSING_LINE,
     AccountKind,
     AccountPnL,
     DailyReportCard,
@@ -14,7 +15,9 @@ from tradekit.reporting import (
     FileReportStore,
     GamePlanRecord,
     Grade,
+    MarketCycle,
     RiskConfig,
+    RiskLevel,
     TradePlan,
     TradeRecord,
     accounts_from_falcon,
@@ -28,6 +31,8 @@ from tradekit.reporting import (
     position_risk,
     r_multiple,
     render_daily_card,
+    render_dw_plan,
+    render_game_plan,
     render_multi_day_trend,
     render_weekly,
     target_for_r,
@@ -404,3 +409,212 @@ def _sample_card(date: str = "2026-06-11") -> DailyReportCard:
         lessons=["Let the thesis trade breathe to first target"],
         behavioral_contract="Hold the thesis trade to plan; no premature scaling.",
     )
+
+
+# ── Discipline Workshop renderer ─────────────────────────────────────────────
+
+
+def _dw_plan(**overrides) -> GamePlanRecord:
+    """A game plan shaped like a real Discipline Workshop submission."""
+    defaults = dict(
+        date="2026-08-31",
+        market_cycle=MarketCycle.HOT,
+        bias=Direction.LONG,
+        thesis_ticker="AEO",
+        fresh_news=[
+            TradePlan(
+                ticker="aeo",
+                direction=Direction.LONG,
+                entry_lines=[17.50, 18.00, 18.50],
+                stop=17.00,
+                float_shares=3_260_000_000,
+                price=17.76,
+                sector="Retail",
+                volume=4_000_000,
+                risk_level=RiskLevel.LOW,
+                notes="Earnings beat, 30% gap, holding above premarket VWAP.",
+            ),
+            TradePlan(
+                ticker="BBLG",
+                direction=Direction.LONG,
+                entry_lines=[2.60, 2.80, 3.00],
+                stop=2.40,
+                float_shares=5_120_000,
+                risk_level=RiskLevel.HIGH,
+                notes="Ultra-low float, 35M volume. Scalp only.",
+            ),
+        ],
+        second_day=[],
+        rules=["Max 5 trades", "No chasing extensions"],
+    )
+    defaults.update(overrides)
+    return GamePlanRecord(**defaults)
+
+
+class TestMicEntryLines:
+    def test_explicit_entry_lines_win(self):
+        tp = TradePlan(ticker="AEO", entry_lines=[1.0, 2.0, 3.0], support=9.0, entry=8.0)
+        assert tp.mic_entry_lines() == [1.0, 2.0, 3.0]
+
+    def test_derived_from_level_triplet_ascending_for_long(self):
+        tp = TradePlan(
+            ticker="AEO",
+            direction=Direction.LONG,
+            support=17.5,
+            inflexion=18.0,
+            resistance=18.5,
+        )
+        assert tp.mic_entry_lines() == [17.5, 18.0, 18.5]
+
+    def test_derived_triplet_descends_for_short(self):
+        tp = TradePlan(
+            ticker="XYZ",
+            direction=Direction.SHORT,
+            support=17.5,
+            inflexion=18.0,
+            resistance=18.5,
+        )
+        assert tp.mic_entry_lines() == [18.5, 18.0, 17.5]
+
+    def test_single_entry_not_padded_with_invented_levels(self):
+        tp = TradePlan(ticker="AEO", entry=17.5)
+        assert tp.mic_entry_lines() == [17.5]
+
+    def test_no_levels_returns_empty(self):
+        assert TradePlan(ticker="AEO").mic_entry_lines() == []
+
+    def test_lone_support_is_not_a_ladder(self):
+        # One level out of the triplet is not enough to imply a three-line plan.
+        tp = TradePlan(ticker="AEO", support=17.5)
+        assert tp.mic_entry_lines() == []
+
+
+class TestRenderDwPlan:
+    def test_plan_line_matches_mic_format(self):
+        out = render_dw_plan(_dw_plan())
+        assert "AEO- 17.50 / 18.00 / 18.50, stop out 17.00 Float: 3.26B Notes: " in out
+        assert "BBLG- 2.60 / 2.80 / 3.00, stop out 2.40 Float: 5.12M Notes: " in out
+
+    def test_top_runners_block(self):
+        out = render_dw_plan(_dw_plan())
+        assert "Top runners:" in out
+        assert "AEO-High volume Float: 3.26B" in out
+
+    def test_explicit_top_runners_override_derived(self):
+        plan = _dw_plan(top_runners=[TradePlan(ticker="CIFR", float_shares=2_050_000_000)])
+        out = render_dw_plan(plan)
+        assert "CIFR-High volume Float: 2.05B" in out
+        assert "AEO-High volume Float" not in out
+
+    def test_market_assessment_and_bias(self):
+        out = render_dw_plan(_dw_plan())
+        assert "**Market Assessment:** HOT MARKET" in out
+        assert "**Bias:** LONG (first bounce)" in out
+
+    def test_short_bias_names_death_candle_strategy(self):
+        out = render_dw_plan(_dw_plan(bias=Direction.SHORT))
+        assert "**Bias:** SHORT (death candle)" in out
+
+    def test_market_regime_used_when_cycle_unset(self):
+        out = render_dw_plan(_dw_plan(market_cycle=None, market_regime="Choppy"))
+        assert "**Market Assessment:** Choppy" in out
+
+    def test_closing_line_present_verbatim(self):
+        assert DW_CLOSING_LINE in render_dw_plan(_dw_plan())
+
+    def test_plan_without_stop_is_withheld_not_posted(self):
+        plan = _dw_plan(
+            fresh_news=[TradePlan(ticker="NVDA", entry_lines=[10.0, 11.0], stop=None)],
+        )
+        out = render_dw_plan(plan)
+        assert "NVDA-" not in out
+        assert "Withheld (no entry ladder or no stop): NVDA" in out
+
+    def test_plan_without_levels_is_withheld(self):
+        plan = _dw_plan(fresh_news=[TradePlan(ticker="NVDA", stop=9.0)])
+        out = render_dw_plan(plan)
+        assert "Withheld (no entry ladder or no stop): NVDA" in out
+
+    def test_missing_float_renders_placeholder_not_zero(self):
+        plan = _dw_plan(
+            fresh_news=[TradePlan(ticker="NVDA", entry_lines=[10.0], stop=9.0)],
+        )
+        out = render_dw_plan(plan)
+        assert "NVDA- 10.00, stop out 9.00 Float: —" in out
+
+    def test_intel_note_used_when_notes_empty(self):
+        plan = _dw_plan(
+            fresh_news=[
+                TradePlan(ticker="NVDA", entry_lines=[10.0], stop=9.0, intel_note="Gap and go")
+            ],
+        )
+        assert "Notes: Gap and go" in render_dw_plan(plan)
+
+    def test_rules_rendered(self):
+        out = render_dw_plan(_dw_plan())
+        assert "1. Max 5 trades" in out
+
+    def test_risk_block_includes_trade_cap(self):
+        cfg = RiskConfig(r_dollars=280, daily_max_r=3, per_trade_max_r=1, max_trades=5)
+        out = render_dw_plan(_dw_plan(), cfg)
+        assert "1R = $280" in out
+        assert "daily stop 3R ($840)" in out
+        assert "max 5 trades" in out
+
+    def test_trade_cap_omitted_when_unset(self):
+        risk_line = render_dw_plan(_dw_plan(), RiskConfig(r_dollars=280)).split("**Risk:**")[1]
+        assert "trades" not in risk_line.split("\n")[0]
+
+    def test_no_risk_block_without_config(self):
+        assert "**Risk:**" not in render_dw_plan(_dw_plan())
+
+    def test_ticker_normalized_to_upper(self):
+        # 'aeo' was passed lowercase in the fixture.
+        assert "aeo-" not in render_dw_plan(_dw_plan())
+
+    def test_table_renderer_unchanged(self):
+        # The analyst table and the DW format are separate surfaces.
+        out = render_game_plan(_dw_plan())
+        assert "## Morning Game Plan — 2026-08-31" in out
+        assert "| Ticker | Bias | Setup |" in out
+        assert DW_CLOSING_LINE not in out
+
+
+class TestShareFormatting:
+    @pytest.mark.parametrize(
+        ("n", "expected"),
+        [
+            (8_440_000_000, "8.44B"),
+            (40_150_000, "40.15M"),
+            (5_120_000, "5.12M"),
+            (1_000_000, "1M"),
+            (1_500_000, "1.5M"),
+            (65_000, "65K"),
+            (900, "900"),
+        ],
+    )
+    def test_share_counts(self, n, expected):
+        from tradekit.reporting.render import _fmt_shares
+
+        assert _fmt_shares(n) == expected
+
+    def test_none_is_placeholder(self):
+        from tradekit.reporting.render import _fmt_shares
+
+        assert _fmt_shares(None) == "—"
+
+
+class TestGamePlanRoundTrip:
+    def test_dw_fields_survive_persistence(self, tmp_path):
+        store = FileReportStore(root=tmp_path)
+        store.put(_dw_plan())
+        item = store.get("GAMEPLAN", "2026-08-31")
+        assert item is not None
+        restored = GamePlanRecord.from_item(item)
+        assert restored.market_cycle is MarketCycle.HOT
+        assert restored.bias is Direction.LONG
+        assert restored.fresh_news[0].entry_lines == [17.50, 18.00, 18.50]
+        assert restored.fresh_news[0].risk_level is RiskLevel.LOW
+        assert restored.fresh_news[0].float_shares == 3_260_000_000
+        # The rendered output is identical after a persistence round-trip.
+        assert render_dw_plan(restored) == render_dw_plan(_dw_plan())

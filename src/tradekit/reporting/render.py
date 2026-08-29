@@ -9,14 +9,50 @@ shared R-unit formatter so dollars always derive from the same R-CONFIG.
 from __future__ import annotations
 
 from tradekit.reporting.aggregate import DayRow, WeeklyRollup
-from tradekit.reporting.runits import RiskConfig, fmt_r
+from tradekit.reporting.runits import RiskConfig, fmt_r, fmt_r_level
 from tradekit.reporting.schema import (
     AccountKind,
     AccountPnL,
     DailyReportCard,
+    Direction,
     GamePlanRecord,
+    TradePlan,
     TradeRecord,
 )
+
+# The Discipline Workshop guidelines close every posted plan with this sentence.
+# It is boilerplate *by design* -- it states that money flow governs adds, and
+# that plan changes need a technical reason. Reproduced verbatim.
+DW_CLOSING_LINE = (
+    "The money flow will be vital to adding to winners and avoiding watchlist "
+    "lines if attention is changed to watchlist stock. Technical reasons for "
+    "adjusting plans are valid."
+)
+
+# Guidelines' recommended simple strategy per direction.
+_BIAS_STRATEGY = {
+    Direction.LONG: "first bounce",
+    Direction.SHORT: "death candle",
+}
+
+
+def _fmt_shares(n: float | None) -> str:
+    """Format a share count the way the plan format does: ``8.44B``, ``5.12M``.
+
+    Trailing zeros are stripped so a round 1,000,000 float renders ``1M`` rather
+    than ``1.00M``, matching the guidelines' own examples.
+    """
+    if n is None:
+        return "—"
+    for divisor, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if abs(n) >= divisor:
+            return f"{n / divisor:.2f}".rstrip("0").rstrip(".") + suffix
+    return f"{n:.0f}"
+
+
+def _fmt_level(x: float | None) -> str:
+    """Two-decimal price, the unambiguous form for a posted entry/stop line."""
+    return "—" if x is None else f"{x:.2f}"
 
 
 def _money(x: float | None) -> str:
@@ -171,6 +207,107 @@ def render_weekly(rollup: WeeklyRollup, rows: list[DayRow], config: RiskConfig |
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _dw_plan_line(tp: TradePlan) -> str | None:
+    """One MIC-format plan line, or ``None`` if the plan is not postable.
+
+    A line needs at least one entry level *and* a stop. Without a stop there is
+    no risk management to review, which is the whole point of the exercise, so
+    the name is withheld rather than posted half-formed.
+    """
+    levels = tp.mic_entry_lines()
+    if not levels or tp.stop is None:
+        return None
+    ladder = " / ".join(_fmt_level(v) for v in levels)
+    line = f"{tp.ticker}- {ladder}, stop out {_fmt_level(tp.stop)}"
+    line += f" Float: {_fmt_shares(tp.float_shares)}"
+    note = tp.notes or tp.intel_note
+    if note:
+        line += f" Notes: {note}"
+    return line
+
+
+def render_dw_plan(plan: GamePlanRecord, config: RiskConfig | None = None) -> str:
+    """Render the game plan in the MyInvestingClub Discipline Workshop format.
+
+    This is the shape the workshop's Tab Group Guidelines mandate for a plan
+    posted to the channel by 9:00 AM market time::
+
+        Top runners:
+        MICD-High volume Float: 1M
+
+        ABCD- 2.50 / 2.75 / 3.00, stop out 3.05 Float: 5M Notes: ...
+
+    It deliberately differs from :func:`render_game_plan`, which emits an
+    analyst-facing table (Z-score, covariance, R). That table is useful
+    internally but is *not* the format the workshop reads, so the two renderers
+    are kept separate rather than one being bent into the other.
+
+    Names lacking an entry ladder or a stop are withheld from the plan body and
+    listed separately, so an incomplete setup is visible instead of silently
+    dropped or padded with invented levels.
+    """
+    lines: list[str] = [f"## Discipline Workshop Plan — {plan.date}", ""]
+
+    if plan.market_cycle is not None:
+        lines.append(f"**Market Assessment:** {plan.market_cycle.value}  ")
+    elif plan.market_regime:
+        lines.append(f"**Market Assessment:** {plan.market_regime}  ")
+    if plan.bias is not None:
+        strategy = _BIAS_STRATEGY.get(plan.bias, "")
+        suffix = f" ({strategy})" if strategy else ""
+        lines.append(f"**Bias:** {plan.bias.value}{suffix}  ")
+    if plan.thesis_ticker:
+        lines.append(f"**Thesis Trade:** {plan.thesis_ticker}  ")
+    lines.append("")
+
+    # Top runners: the observation list. Falls back to planned names carrying a
+    # float, since those are the ones with a volume story worth stating.
+    runners = plan.top_runners or [
+        tp for tp in (*plan.fresh_news, *plan.second_day) if tp.float_shares is not None
+    ]
+    if runners:
+        lines.append("Top runners:")
+        lines.extend(f"{tp.ticker}-High volume Float: {_fmt_shares(tp.float_shares)}" for tp in runners)
+        lines.append("")
+
+    withheld: list[str] = []
+    for tp in (*plan.fresh_news, *plan.second_day):
+        line = _dw_plan_line(tp)
+        if line is None:
+            withheld.append(tp.ticker)
+        else:
+            lines.extend([line, ""])
+
+    lines.extend([DW_CLOSING_LINE, ""])
+
+    if config is not None:
+        lines.append("**Risk:** " + _dw_risk_summary(config))
+        lines.append("")
+
+    if plan.rules:
+        lines.append("### Rules for Today")
+        lines.extend(f"{i + 1}. {r}" for i, r in enumerate(plan.rules))
+        lines.append("")
+
+    if withheld:
+        lines.append(f"> Withheld (no entry ladder or no stop): {', '.join(withheld)}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _dw_risk_summary(config: RiskConfig) -> str:
+    """The pre-open risk numbers as one line: per-trade, daily cap, trade cap."""
+    parts = [
+        f"1R = ${config.r_dollars:,.0f}",
+        f"per-trade max {fmt_r_level(config.per_trade_max_r, config)}",
+        f"daily stop {fmt_r_level(config.daily_max_r, config)}",
+    ]
+    if config.max_trades is not None:
+        parts.append(f"max {config.max_trades} trades")
+    return " | ".join(parts)
 
 
 def render_game_plan(plan: GamePlanRecord, config: RiskConfig | None = None) -> str:
