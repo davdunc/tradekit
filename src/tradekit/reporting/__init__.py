@@ -50,7 +50,9 @@ from tradekit.reporting.ingest import (
     trade_from_dict,
 )
 from tradekit.reporting.render import (
+    DW_CLOSING_LINE,
     render_daily_card,
+    render_dw_plan,
     render_game_plan,
     render_multi_day_trend,
     render_weekly,
@@ -58,6 +60,7 @@ from tradekit.reporting.render import (
 from tradekit.reporting.runits import (
     RiskConfig,
     fmt_r,
+    fmt_r_level,
     position_risk,
     r_multiple,
     target_for_r,
@@ -73,6 +76,8 @@ from tradekit.reporting.schema import (
     GamePlanRecord,
     MacroContext,
     MacroSignal,
+    MarketCycle,
+    RiskLevel,
     TradePlan,
     TradeRecord,
 )
@@ -104,6 +109,7 @@ __all__ = [
     # runits
     "RiskConfig",
     "fmt_r",
+    "fmt_r_level",
     "r_multiple",
     "position_risk",
     "target_for_r",
@@ -111,6 +117,8 @@ __all__ = [
     "Direction",
     "CovarianceStatus",
     "AccountKind",
+    "MarketCycle",
+    "RiskLevel",
     "MacroSignal",
     "MacroContext",
     "TradePlan",
@@ -134,4 +142,6 @@ __all__ = [
     "render_weekly",
     "render_multi_day_trend",
     "render_game_plan",
+    "render_dw_plan",
+    "DW_CLOSING_LINE",
 ]

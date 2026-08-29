@@ -29,12 +29,18 @@ class RiskConfig:
         r_dollars: Dollar value of 1R (the standard per-trade risk budget).
         daily_max_r: Daily loss limit expressed in R (stored positive).
         per_trade_max_r: Max risk allowed on a single trade, in R.
+        max_trades: Hard cap on round-trips for the session, or ``None`` for no
+            cap. A trade *count* limit is not expressible in R -- a day can sit
+            inside its R budget while still churning dozens of round-trips, which
+            is the overtrading failure mode the Discipline Workshop grades on. The
+            cap therefore has to be its own number.
         account: Optional account label this config applies to.
     """
 
     r_dollars: float = 280.0
     daily_max_r: float = 3.0
     per_trade_max_r: float = 1.0
+    max_trades: int | None = None
     account: str = ""
 
     def dollars(self, r_multiple: float) -> float:
