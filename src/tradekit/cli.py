@@ -2349,3 +2349,115 @@ def debate(ticker: str, period: str, level: str, no_persist: bool, source: str |
 
     if not no_persist:
         console.print(f"\n[dim]Transcript saved to {debate_dir()}[/dim]")
+
+
+@cli.group()
+def cards():
+    """Canonical report cards: render and inspect stored game plans."""
+
+
+def _risk_config_from_opts(
+    r_dollars: float | None,
+    daily_max_r: float | None,
+    per_trade_max_r: float | None,
+    max_trades: int | None,
+):
+    """Build a RiskConfig only if the caller actually specified risk numbers.
+
+    Returning ``None`` when nothing was passed matters: the renderers omit the
+    risk block entirely for ``None``, whereas a default-constructed config would
+    silently publish someone else's 1R figure as if it were the trader's own.
+    """
+    from tradekit.reporting import RiskConfig
+
+    if all(v is None for v in (r_dollars, daily_max_r, per_trade_max_r, max_trades)):
+        return None
+    defaults = RiskConfig()
+    return RiskConfig(
+        r_dollars=defaults.r_dollars if r_dollars is None else r_dollars,
+        daily_max_r=defaults.daily_max_r if daily_max_r is None else daily_max_r,
+        per_trade_max_r=defaults.per_trade_max_r if per_trade_max_r is None else per_trade_max_r,
+        max_trades=max_trades,
+    )
+
+
+@cards.command("gameplan")
+@click.argument("date", required=False)
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["dw", "table", "json"]),
+    default="dw",
+    help="dw = Discipline Workshop post format, table = analyst view, json = raw record.",
+)
+@click.option(
+    "--out",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Write to a file instead of stdout. Use this when piping — stdout carries a banner.",
+)
+@click.option("--scope", default="GLOBAL", help="Record scope partition.")
+@click.option(
+    "--store",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Report store root (default ~/.tradekit/reports).",
+)
+@click.option("--r-dollars", type=float, default=None, help="Dollar value of 1R.")
+@click.option("--daily-max-r", type=float, default=None, help="Daily loss limit in R.")
+@click.option("--per-trade-max-r", type=float, default=None, help="Max risk per trade in R.")
+@click.option("--max-trades", type=int, default=None, help="Hard cap on round-trips for the session.")
+def cards_gameplan(
+    date: str | None,
+    fmt: str,
+    out: Path | None,
+    scope: str,
+    store: Path | None,
+    r_dollars: float | None,
+    daily_max_r: float | None,
+    per_trade_max_r: float | None,
+    max_trades: int | None,
+):
+    """Render the stored game plan for DATE (default: today, ET).
+
+    The 'dw' format is the one the Discipline Workshop expects in the channel by
+    9:00 AM market time; 'table' is the analyst view with Z-scores and
+    covariance.
+    """
+    import json as _json
+
+    from tradekit.reporting import (
+        FileReportStore,
+        GamePlanRecord,
+        render_dw_plan,
+        render_game_plan,
+    )
+
+    date = date or now_et().strftime("%Y-%m-%d")
+    report_store = FileReportStore(root=store)
+
+    item = report_store.get("GAMEPLAN", date, scope=scope)
+    if item is None:
+        # Name the exact location checked, so a wrong --store or --scope is
+        # obvious rather than looking like a missing plan. Raised as a
+        # ClickException so it lands on stderr unwrapped and unstyled -- callers
+        # piping the plan need the error kept out of the document.
+        raise click.ClickException(
+            f"No game plan stored for {date} (scope {scope}) under {report_store.root}"
+        )
+
+    if fmt == "json":
+        text = _json.dumps(item, indent=2, sort_keys=True)
+    else:
+        plan = GamePlanRecord.from_item(item)
+        config = _risk_config_from_opts(r_dollars, daily_max_r, per_trade_max_r, max_trades)
+        text = render_dw_plan(plan, config) if fmt == "dw" else render_game_plan(plan, config)
+
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text)
+        console.print(f"[green]Wrote {fmt} game plan for {date} to {out}[/green]")
+    else:
+        # click.echo, not console.print: Rich would interpret bracketed text in
+        # the plan's notes as markup and eat it.
+        click.echo(text, nl=False)
