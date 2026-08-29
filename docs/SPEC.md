@@ -73,6 +73,11 @@ cli        -> everything
 4. **Nothing imports `cli`.** If a module needs something in `cli.py`, that
    something is in the wrong file.
 5. **No cycles.** Any new edge must preserve the order above.
+6. **Import public names across package boundaries.** A `_leading_underscore` symbol belongs
+   to its own module. `reports/html.py:323` currently does
+   `from tradekit.data.finviz import _trade_review_day_dir`; the public
+   `paths.trade_review_day_dir` is what it wants. This is not a layering violation — `reports`
+   may import `data` — but it couples a renderer to another package's private helper.
 
 ## The data provider contract
 
@@ -269,11 +274,12 @@ Recorded rather than hidden. Each is a rule above that nothing currently enforce
 | # | Gap | Evidence | Fix |
 |---|---|---|---|
 | G1 | **`blotter` is documented but unreachable.** PR #2 advertises `tradekit blotter DATE`; `reports/blotter.py` ships; no `@cli.command()` registers it and `--help` does not list it. | `grep blotter src/tradekit/cli.py` returns nothing | Register the command, or remove the claim |
-| G2 | **Version stated in three places, all disagreeing.** `pyproject.toml` 0.2.0, `__init__.py` 0.1.0, `tradekit.spec` 0.1.0. Nothing reads `__version__`. | — | Derive `__version__`; add a CI check across all three |
+| G2 | **Version stated in four places, all disagreeing.** `pyproject.toml` 0.2.0, `__init__.py` 0.1.0, `tradekit.spec` 0.3.0, `CHANGELOG.md` top heading 0.2.0. Nothing reads `__version__`. | — | Derive `__version__` from `importlib.metadata`; add a CI check across all four |
 | G3 | **Import direction is documented, not enforced.** Nothing fails if `analysis` imports `data` tomorrow. | — | Add an import-direction test |
 | G4 | **RPM `Requires:` and `Commands:` drift silently** from `pyproject.toml` and `--help`. | matplotlib was missing; four commands were unlisted | Add a CI check comparing spec metadata to the tree |
 | G5 | **`cli.py` is 2,351 lines**, 38% of the codebase, and holds logic that belongs in `screener` and `reports`. | — | Extract incrementally; no new business logic in `cli.py` |
 | G6 | **mypy: 156 errors across 57 files.** | `mypy src/tradekit` | Ratchet, do not flip |
+| G7 | **`reports/html.py:323` imports a private helper** from `data.finviz` instead of the public `paths.trade_review_day_dir`. | `grep -n _trade_review_day_dir src/tradekit/reports/html.py` | Call the public function |
 
 G1 and G4 are the same failure in two places: a claim published without a check
 that the claim is true. G3 and G2 are that failure waiting to happen.
