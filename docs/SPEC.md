@@ -197,7 +197,7 @@ Everything else derives or matches:
 | Location | Rule |
 |---|---|
 | `pyproject.toml` `project.version` | **Authoritative** |
-| `src/tradekit/__init__.py` `__version__` | Derive via `importlib.metadata.version("tradekit")`, or delete it |
+| `src/tradekit/__init__.py` `__version__` | **Derived** via `importlib.metadata.version("tradekit")`. Never hand-maintained |
 | `packaging/tradekit.spec` `Version:` | Must equal the tag `Source0` points at |
 | Git tag `vX.Y.Z` | Must equal `project.version` |
 
@@ -274,7 +274,7 @@ Recorded rather than hidden. Each is a rule above that nothing currently enforce
 | # | Gap | Evidence | Fix |
 |---|---|---|---|
 | G1 | **`blotter` is documented but unreachable.** PR #2 advertises `tradekit blotter DATE`; `reports/blotter.py` ships; no `@cli.command()` registers it and `--help` does not list it. | `grep blotter src/tradekit/cli.py` returns nothing | Register the command, or remove the claim |
-| G2 | **Version stated in four places, all disagreeing.** `pyproject.toml` 0.2.0, `__init__.py` 0.1.0, `tradekit.spec` 0.3.0, `CHANGELOG.md` top heading 0.2.0. Nothing reads `__version__`. | — | Derive `__version__` from `importlib.metadata`; add a CI check across all four |
+| ~~G2~~ | ~~**Version stated in four places, all disagreeing.**~~ **Closed 2026-08-29.** `__version__` now derives from installed metadata; `pyproject.toml`, `packaging/tradekit.spec` and `CHANGELOG.md` all read 0.3.0. | `pyproject`/`spec`/`CHANGELOG` all 0.3.0; `tradekit.__version__` derived | Remaining: a CI check asserting the three files still agree — otherwise this reopens (see G4) |
 | G3 | **Import direction is documented, not enforced.** Nothing fails if `analysis` imports `data` tomorrow. | — | Add an import-direction test |
 | G4 | **RPM `Requires:` and `Commands:` drift silently** from `pyproject.toml` and `--help`. | matplotlib was missing; four commands were unlisted | Add a CI check comparing spec metadata to the tree |
 | G5 | **`cli.py` is 2,351 lines**, 38% of the codebase, and holds logic that belongs in `screener` and `reports`. | — | Extract incrementally; no new business logic in `cli.py` |
