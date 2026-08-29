@@ -19,6 +19,10 @@ review workflow assembles.
 
 from __future__ import annotations
 
+import os
+import tomllib
+
+from tradekit.paths import accounts_config
 from tradekit.reporting.grading import DisciplineScore, Grade, discipline_from_flags
 from tradekit.reporting.schema import (
     AccountKind,
@@ -30,9 +34,65 @@ from tradekit.reporting.schema import (
     TradeRecord,
 )
 
-# Known DAS account ids → book kind. Override per call when ids differ.
+ACCOUNT_KINDS_ENV = "TRADEKIT_ACCOUNT_KINDS"
+
+#: Deprecated. Kept so existing imports keep working; it is no longer consulted.
+#: It was an empty dict that silently made every account resolve to LIVE.
+#: Use :func:`default_account_kinds`, or pass ``account_kinds=`` explicitly.
 DEFAULT_ACCOUNT_KINDS: dict[str, AccountKind] = {}
-# Load account mappings from environment or config file instead of hardcoding
+
+
+def _parse_account_kinds(raw: str) -> dict[str, AccountKind]:
+    """Parse ``ID=KIND,ID=KIND``. Unknown kinds and malformed pairs are skipped."""
+    out: dict[str, AccountKind] = {}
+    for pair in raw.split(","):
+        account, sep, kind = pair.partition("=")
+        if not sep:
+            continue
+        account, kind = account.strip(), kind.strip().upper()
+        if not account:
+            continue
+        try:
+            out[account] = AccountKind(kind)
+        except ValueError:
+            continue
+    return out
+
+
+def default_account_kinds() -> dict[str, AccountKind]:
+    """Account id → book kind, resolved from the environment or user config.
+
+    Broker account ids are personal identifiers and this project is public, so
+    the mapping is never hardcoded here. Resolution order, first hit wins:
+
+    1. ``$TRADEKIT_ACCOUNT_KINDS`` — ``"1RB16917=LIVE,TR4425=SIM"``
+    2. ``accounts_config()`` — TOML, ``[accounts]`` table of ``id = "LIVE"|"SIM"``
+
+    Resolved on every call rather than cached at import, so a test or a caller
+    that sets the environment is honoured.
+
+    Returns an empty mapping when neither source exists. Callers must treat an
+    unmapped account as *unknown* rather than defaulting it to LIVE — see
+    :func:`account_pnl_from_falcon`.
+    """
+    raw = os.environ.get(ACCOUNT_KINDS_ENV)
+    if raw:
+        return _parse_account_kinds(raw)
+
+    path = accounts_config()
+    try:
+        with path.open("rb") as fh:
+            table = tomllib.load(fh).get("accounts", {})
+    except OSError, tomllib.TOMLDecodeError:
+        return {}
+    out: dict[str, AccountKind] = {}
+    for account, kind in table.items():
+        try:
+            out[str(account)] = AccountKind(str(kind).upper())
+        except ValueError:
+            continue
+    return out
+
 
 # Tolerant field aliases for the falcon per-account stat object. First match wins.
 _FALCON_ALIASES: dict[str, tuple[str, ...]] = {
@@ -72,14 +132,16 @@ def account_pnl_from_falcon(stat: dict, account_kinds: dict[str, AccountKind] | 
     win/loss counts, the counts are reconstructed from ``win_rate * round_trips``
     so the W/L column is still populated; explicit counts always win.
     """
-    kinds = account_kinds or DEFAULT_ACCOUNT_KINDS
+    kinds = account_kinds if account_kinds is not None else default_account_kinds()
     account = str(_g(stat, "account", "")).strip()
 
     kind_raw = _g(stat, "kind")
     if kind_raw is not None:
         kind = AccountKind(str(kind_raw).upper())
     else:
-        kind = kinds.get(account, AccountKind.LIVE)
+        # No silent LIVE default: an unmapped account guessed as LIVE is how a SIM
+        # book gets reported against live risk. Unknown stays unknown.
+        kind = kinds.get(account)
 
     round_trips = int(_g(stat, "round_trips", 0) or 0)
     wins = _g(stat, "wins")
@@ -128,7 +190,7 @@ def accounts_from_falcon(
 
 def trade_from_dict(d: dict, account_kinds: dict[str, AccountKind] | None = None) -> TradeRecord:
     """Build a graded :class:`TradeRecord` from the narrative's trade object."""
-    kinds = account_kinds or DEFAULT_ACCOUNT_KINDS
+    kinds = account_kinds if account_kinds is not None else default_account_kinds()
     account = str(d.get("account", "")).strip()
     account_kind = d.get("account_kind") or d.get("kind")
     kind = AccountKind(str(account_kind).upper()) if account_kind else kinds.get(account)

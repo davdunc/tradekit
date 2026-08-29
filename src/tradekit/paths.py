@@ -21,6 +21,7 @@ Spec mapping (https://specifications.freedesktop.org/basedir-spec/latest/):
     $XDG_DATA_HOME   ~/.local/share   durable app data      -> data_dir()
     $XDG_CACHE_HOME  ~/.cache         regenerable, unbacked -> cache_dir()
     $XDG_STATE_HOME  ~/.local/state   logs, history         -> state_dir()
+    $XDG_CONFIG_HOME ~/.config        user configuration    -> config_dir()
 
 Note ``~/.local/<app>`` is *not* an XDG location; only ``share``, ``state``,
 ``bin``, and ``lib`` live directly under ``~/.local``.
@@ -67,6 +68,24 @@ def xdg_cache_home() -> Path:
 
 def xdg_state_home() -> Path:
     return _env_path("XDG_STATE_HOME") or Path.home() / ".local" / "state"
+
+
+def xdg_config_home() -> Path:
+    return _env_path("XDG_CONFIG_HOME") or Path.home() / ".config"
+
+
+def config_dir() -> Path:
+    """User configuration. Owned by tradekit; safe to relocate."""
+    return xdg_config_home() / "tradekit"
+
+
+def accounts_config() -> Path:
+    """Account id -> book kind mapping.
+
+    Deliberately user-owned and outside the repository: broker account ids are
+    personal identifiers and this project is public.
+    """
+    return config_dir() / "accounts.toml"
 
 
 def _resolve(env_var: str, preferred: Path, *legacy: Path) -> Path:

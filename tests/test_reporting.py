@@ -1,6 +1,7 @@
 """Tests for the canonical reporting layer."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -17,9 +18,11 @@ from tradekit.reporting import (
     RiskConfig,
     TradePlan,
     TradeRecord,
+    account_pnl_from_falcon,
     accounts_from_falcon,
     average_grade,
     build_daily_card,
+    default_account_kinds,
     discipline_from_flags,
     fmt_r,
     grade_from_score,
@@ -225,6 +228,17 @@ class TestAggregateAndRender:
 
 
 class TestIngest:
+    @pytest.fixture(autouse=True)
+    def _account_kinds(self, monkeypatch):
+        """Supply the account mapping the way a real deployment does.
+
+        The ids live in the environment, never in the source tree — they are
+        personal identifiers and this repository is public. Setting them here
+        also keeps the tests hermetic: they no longer depend on whether the
+        developer happens to have ~/.config/tradekit/accounts.toml.
+        """
+        monkeypatch.setenv("TRADEKIT_ACCOUNT_KINDS", "1RB16917=LIVE,TR4425=SIM")
+
     def _falcon(self):
         # Mimics falcon-stats output (alias-tolerant keys on purpose).
         return [
@@ -283,7 +297,7 @@ class TestIngest:
         live = next(a for a in accts if a.account == "1RB16917")
         sim = next(a for a in accts if a.account == "TR4425")
         assert live.kind is AccountKind.LIVE
-        assert sim.kind is AccountKind.SIM  # inferred from known id
+        assert sim.kind is AccountKind.SIM  # from the configured mapping
         # Deterministic numbers carried verbatim, incl. equity shape.
         assert live.realized == pytest.approx(240.50)
         assert live.max_drawdown == pytest.approx(-60.0)
@@ -308,7 +322,7 @@ class TestIngest:
         assert card.market_regime == "Trending"
         t = card.trades[0]
         assert t.ticker == "NVDA" and t.grade is Grade.A and t.direction is Direction.LONG
-        assert t.account_kind is AccountKind.LIVE  # inferred from account id
+        assert t.account_kind is AccountKind.LIVE  # from the configured mapping
         # discipline flags → reproducible total (2 + 2 + 1)
         assert card.discipline.total == 5
         assert card.monitored_not_traded == ["AMD", "ARM"]
@@ -404,3 +418,49 @@ def _sample_card(date: str = "2026-06-11") -> DailyReportCard:
         lessons=["Let the thesis trade breathe to first target"],
         behavioral_contract="Hold the thesis trade to plan; no premature scaling.",
     )
+
+
+class TestAccountKindResolution:
+    """An unmapped account must never be guessed as LIVE."""
+
+    def _stat(self, account: str) -> dict:
+        return {"account": account, "round_trips": 1, "wins": 1, "losses": 0, "realized": 10.0}
+
+    def test_env_mapping_is_parsed(self, monkeypatch):
+        monkeypatch.setenv("TRADEKIT_ACCOUNT_KINDS", "AAA=LIVE, BBB=sim")
+        kinds = default_account_kinds()
+        assert kinds == {"AAA": AccountKind.LIVE, "BBB": AccountKind.SIM}
+
+    def test_malformed_pairs_are_skipped_not_fatal(self, monkeypatch):
+        monkeypatch.setenv("TRADEKIT_ACCOUNT_KINDS", "AAA=LIVE,,garbage,CCC=NOPE,=SIM,BBB=SIM")
+        assert default_account_kinds() == {"AAA": AccountKind.LIVE, "BBB": AccountKind.SIM}
+
+    def test_unmapped_account_is_unknown_never_live(self, monkeypatch):
+        monkeypatch.setenv("TRADEKIT_ACCOUNT_KINDS", "AAA=LIVE")
+        acct = account_pnl_from_falcon(self._stat("ZZZ"))
+        assert acct.kind is None, "an unmapped account must not be guessed as LIVE"
+
+    def test_explicit_kind_on_the_record_wins(self, monkeypatch):
+        monkeypatch.delenv("TRADEKIT_ACCOUNT_KINDS", raising=False)
+        stat = self._stat("ZZZ") | {"kind": "sim"}
+        assert account_pnl_from_falcon(stat).kind is AccountKind.SIM
+
+    def test_toml_config_used_when_env_absent(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("TRADEKIT_ACCOUNT_KINDS", raising=False)
+        cfg = tmp_path / "accounts.toml"
+        cfg.write_text('[accounts]\n"AAA" = "LIVE"\n"BBB" = "SIM"\n')
+        monkeypatch.setattr("tradekit.reporting.ingest.accounts_config", lambda: cfg)
+        assert default_account_kinds() == {"AAA": AccountKind.LIVE, "BBB": AccountKind.SIM}
+
+    def test_missing_config_is_empty_not_an_error(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("TRADEKIT_ACCOUNT_KINDS", raising=False)
+        monkeypatch.setattr("tradekit.reporting.ingest.accounts_config", lambda: tmp_path / "nope.toml")
+        assert default_account_kinds() == {}
+
+    def test_unmapped_account_renders_as_unmapped(self, monkeypatch):
+        monkeypatch.delenv("TRADEKIT_ACCOUNT_KINDS", raising=False)
+        monkeypatch.setattr("tradekit.reporting.ingest.accounts_config", lambda: Path("/nonexistent.toml"))
+        card = build_daily_card("2026-06-11", [self._stat("ZZZ")], {})
+        out = render_daily_card(card)
+        assert "UNMAPPED (ZZZ)" in out
+        assert "LIVE (ZZZ)" not in out
