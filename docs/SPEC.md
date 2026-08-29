@@ -135,8 +135,8 @@ Three invariants, from `CONTRIBUTING.md` and kept here because they constrain co
 configuration or raise. They do not fall back.**
 
 ```python
-port = int(env["DAS_PORT"])                    # correct — absent config fails loudly
-port = int(env.get("DAS_PORT", "9910"))        # wrong
+port = int(env["DAS_PORT"])  # correct — absent config fails loudly
+port = int(env.get("DAS_PORT", "9910"))  # wrong
 ```
 
 The failure mode is specific and expensive: a wrong default produces a connection
@@ -231,7 +231,7 @@ CI gates on Python 3.14:
 | Gate | Blocking? |
 |---|---|
 | `ruff check .` | **Yes** |
-| `ruff format --check .` | **Yes** |
+| `ruff format --check .` | **Yes** — note this formats Python **inside markdown fences too**, so `docs/*.md` is subject to it. `ruff check` is not; it skips markdown. Run `ruff format --check .` from the repo root before pushing docs |
 | `pytest` | **Yes** |
 | `mypy src/tradekit` | No — `continue-on-error` |
 | Build wheel + sdist | **Yes** |
