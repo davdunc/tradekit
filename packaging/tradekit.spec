@@ -38,6 +38,9 @@ Requires:       python3 >= 3.14
 Requires:       python3-yfinance
 Requires:       python3-pandas
 Requires:       python3-numpy
+# Required by tradekit.reports.blotter, which ships in the package and is imported
+# by %%pyproject_check_import even though no @cli.command() currently exposes it
+# (docs/SPEC.md gap G1). Do not drop this until that module is registered or removed.
 Requires:       python3-matplotlib >= 3.11.1
 Requires:       python3-pydantic-settings
 Requires:       python3-mcp
@@ -114,9 +117,10 @@ install -m 0644 packaging/tradekit-groups-daily.timer \
 %check
 # Every import in the package resolves against the installed tree.
 %pyproject_check_import
-# The CLI must produce help without raising. This is the smoke test that would
-# have caught an unregistered command or a missing runtime dep, so it must be
-# allowed to fail the build -- no `|| :`.
+# The CLI must produce help without raising. This catches an import-time error or a
+# missing runtime dep, so it must be allowed to fail the build -- no `|| :`.
+# It does NOT catch an unregistered command: `tradekit --help` exits 0 whether or not
+# a given module is wired to a @cli.command(). See docs/SPEC.md gap G1.
 PYTHONPATH=%{buildroot}%{python3_sitelib} \
     %{buildroot}%{_bindir}/tradekit --help >/dev/null
 %pytest -q
