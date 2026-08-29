@@ -280,6 +280,7 @@ Recorded rather than hidden. Each is a rule above that nothing currently enforce
 | G5 | **`cli.py` is 2,351 lines**, 38% of the codebase, and holds logic that belongs in `screener` and `reports`. | — | Extract incrementally; no new business logic in `cli.py` |
 | G6 | **mypy: 156 errors across 57 files.** | `mypy src/tradekit` | Ratchet, do not flip |
 | G7 | **`reports/html.py:323` imports a private helper** from `data.finviz` instead of the public `paths.trade_review_day_dir`. | `grep -n _trade_review_day_dir src/tradekit/reports/html.py` | Call the public function |
+| G8 | **Account kind classification is broken; `main` is red.** `reporting/ingest.py:34` sets `DEFAULT_ACCOUNT_KINDS = {}` with the note *"Load account mappings from environment or config file instead of hardcoding"* — the hardcoding was removed (correctly, for a public repo) but the replacement loader was never written. `ingest.py:82` therefore falls back to `AccountKind.LIVE` for every account, so a SIM account is reported as LIVE. 3 tests in `tests/test_reporting.py` have been failing on `main` since. | `git checkout origin/main && pytest tests/test_reporting.py` → 3 failed | Implement the config-driven mapping the comment promises. Until then LIVE/SIM separation — the one distinction the risk model depends on — silently does not hold |
 
 G1 and G4 are the same failure in two places: a claim published without a check
 that the claim is true. G3 and G2 are that failure waiting to happen.
