@@ -15,7 +15,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Exposed as `tradekit gex [--ticker SPY] [--max-dte N] [--rate R] [--json]`.
   Same-day (0DTE) contracts contribute and are reported as their own slice; time to
   expiry is measured to the 16:00 ET close and floored at ten minutes, so gamma stays
-  finite in the closing minutes and expired contracts are dropped rather than floored.
+  finite in the closing minutes and expired contracts are dropped rather than floored (#14)
+
+### Fixed
+
+- **Account kind is resolved from configuration, never guessed** (#11). `DEFAULT_ACCOUNT_KINDS`
+  was empty and lookups fell through to `AccountKind.LIVE`, so every account — including a
+  simulated book — resolved to LIVE. `default_account_kinds()` now reads
+  `$TRADEKIT_ACCOUNT_KINDS` then `[accounts]` in `~/.config/tradekit/accounts.toml`, and an
+  unmapped account renders `UNMAPPED (<id>)` rather than claiming a risk basis it has not been
+  told. `AccountPnL.kind` is `Optional` so "unknown" is a real state
+
+## [0.3.0] — 2026-08-29
+
+### Added
+
+- **Canonical reporting layer** — unified schema and grading (#8)
+- **Round-trip blotter** — `reports/blotter.py` renders a round-trip blotter with
+  Massive S3 flat-file backing (#2, #7). **Note:** the module ships but no
+  `@cli.command()` currently registers it — see `docs/SPEC.md` gap G1
+- **Development specification** — `docs/SPEC.md`: module boundaries and verified import
+  direction, the `DataProvider` contract, path ownership, CLI registration rules, the
+  release process, and a register of eight known gaps
+
+### Changed
+
+- **On-disk layout now follows the XDG Base Directory spec** (#4, ADR 0001). Paths resolve
+  via `tradekit.paths`; the two Falcon-suite contract paths tolerate both XDG and legacy
+  locations so suite components can migrate independently
+- **Rebrand** — Personal AI Infrastructure / PAI → LifeOS across docs and metadata
+- `__version__` now derives from installed package metadata instead of being a second
+  hand-maintained copy
+
+### Fixed
+
+- Blotter handles open positions and resolves Massive S3 credentials correctly (#7)
+
+### Security
+
+- Locked dependencies upgraded to clear 51 known CVEs (#6)
 
 ## [0.2.0] — 2026-07-14
 
