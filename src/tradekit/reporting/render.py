@@ -275,9 +275,7 @@ def render_dw_plan(plan: GamePlanRecord, config: RiskConfig | None = None) -> st
 
     # Top runners: the observation list. Falls back to planned names carrying a
     # float, since those are the ones with a volume story worth stating.
-    runners = plan.top_runners or [
-        tp for tp in (*plan.fresh_news, *plan.second_day) if tp.float_shares is not None
-    ]
+    runners = plan.top_runners or [tp for tp in (*plan.fresh_news, *plan.second_day) if tp.float_shares is not None]
     if runners:
         lines.append("Top runners:")
         lines.extend(f"{tp.ticker}-High volume Float: {_fmt_shares(tp.float_shares)}" for tp in runners)

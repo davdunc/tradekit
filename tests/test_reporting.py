@@ -470,6 +470,7 @@ class TestAccountKindResolution:
         assert "UNMAPPED (ZZZ)" in out
         assert "LIVE (ZZZ)" not in out
 
+
 # ── Discipline Workshop renderer ─────────────────────────────────────────────
 
 
@@ -603,9 +604,7 @@ class TestRenderDwPlan:
 
     def test_intel_note_used_when_notes_empty(self):
         plan = _dw_plan(
-            fresh_news=[
-                TradePlan(ticker="NVDA", entry_lines=[10.0], stop=9.0, intel_note="Gap and go")
-            ],
+            fresh_news=[TradePlan(ticker="NVDA", entry_lines=[10.0], stop=9.0, intel_note="Gap and go")],
         )
         assert "Notes: Gap and go" in render_dw_plan(plan)
 

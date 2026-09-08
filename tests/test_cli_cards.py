@@ -63,33 +63,25 @@ class TestCardsGameplan:
         assert "Top runners:" in result.output
 
     def test_explicit_dw_format(self, store_root):
-        result = _run(
-            ["cards", "gameplan", "2026-08-31", "--format", "dw", "--store", str(store_root)]
-        )
+        result = _run(["cards", "gameplan", "2026-08-31", "--format", "dw", "--store", str(store_root)])
         assert result.exit_code == 0
         assert "**Market Assessment:** HOT MARKET" in result.output
 
     def test_table_format_is_the_analyst_view(self, store_root):
-        result = _run(
-            ["cards", "gameplan", "2026-08-31", "--format", "table", "--store", str(store_root)]
-        )
+        result = _run(["cards", "gameplan", "2026-08-31", "--format", "table", "--store", str(store_root)])
         assert result.exit_code == 0
         assert "| Ticker | Bias | Setup |" in result.output
         assert "stop out" not in result.output
 
     def test_json_format_emits_the_raw_item(self, store_root):
-        result = _run(
-            ["cards", "gameplan", "2026-08-31", "--format", "json", "--store", str(store_root)]
-        )
+        result = _run(["cards", "gameplan", "2026-08-31", "--format", "json", "--store", str(store_root)])
         assert result.exit_code == 0
         payload = json.loads(result.output[result.output.index("{") :])
         assert payload["record_type"] == "GAMEPLAN"
         assert payload["fresh_news"][0]["entry_lines"] == [17.5, 18.0, 18.5]
 
     def test_invalid_format_rejected(self, store_root):
-        result = _run(
-            ["cards", "gameplan", "2026-08-31", "--format", "xml", "--store", str(store_root)]
-        )
+        result = _run(["cards", "gameplan", "2026-08-31", "--format", "xml", "--store", str(store_root)])
         assert result.exit_code != 0
 
     def test_missing_plan_exits_nonzero_and_names_the_path(self, store_root):
@@ -103,9 +95,7 @@ class TestCardsGameplan:
         assert "Discipline Workshop Plan" not in result.stdout
 
     def test_unknown_scope_is_reported_not_silently_empty(self, store_root):
-        result = _run(
-            ["cards", "gameplan", "2026-08-31", "--scope", "NOPE", "--store", str(store_root)]
-        )
+        result = _run(["cards", "gameplan", "2026-08-31", "--scope", "NOPE", "--store", str(store_root)])
         assert result.exit_code == 1
         assert "scope NOPE" in _errtext(result)
 
@@ -113,9 +103,7 @@ class TestCardsGameplan:
 class TestOutFile:
     def test_out_writes_clean_text_without_the_banner(self, store_root, tmp_path):
         dest = tmp_path / "posts" / "plan.md"
-        result = _run(
-            ["cards", "gameplan", "2026-08-31", "--store", str(store_root), "--out", str(dest)]
-        )
+        result = _run(["cards", "gameplan", "2026-08-31", "--store", str(store_root), "--out", str(dest)])
         assert result.exit_code == 0
         text = dest.read_text()
         # The file must be postable as-is: no ANSI escapes, no session banner.
@@ -156,9 +144,7 @@ class TestRiskOptions:
 
     def test_partial_risk_options_fill_from_defaults(self, store_root):
         # Only --r-dollars given; the R-based limits should still render.
-        result = _run(
-            ["cards", "gameplan", "2026-08-31", "--store", str(store_root), "--r-dollars", "500"]
-        )
+        result = _run(["cards", "gameplan", "2026-08-31", "--store", str(store_root), "--r-dollars", "500"])
         assert "1R = $500" in result.output
         assert "daily stop 3R ($1,500)" in result.output
 

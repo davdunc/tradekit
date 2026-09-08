@@ -2484,9 +2484,7 @@ def cards_gameplan(
         # obvious rather than looking like a missing plan. Raised as a
         # ClickException so it lands on stderr unwrapped and unstyled -- callers
         # piping the plan need the error kept out of the document.
-        raise click.ClickException(
-            f"No game plan stored for {date} (scope {scope}) under {report_store.root}"
-        )
+        raise click.ClickException(f"No game plan stored for {date} (scope {scope}) under {report_store.root}")
 
     if fmt == "json":
         text = _json.dumps(item, indent=2, sort_keys=True)
