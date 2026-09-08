@@ -83,7 +83,11 @@ def default_account_kinds() -> dict[str, AccountKind]:
     try:
         with path.open("rb") as fh:
             table = tomllib.load(fh).get("accounts", {})
-    except (OSError, tomllib.TOMLDecodeError):
+    # Unparenthesized except group — valid since PEP 758 (Python 3.14), which this
+    # project requires, and the form `ruff format` produces at target-version py314.
+    # It reads like a Python 2 `except X, e:` and has already been "corrected" once;
+    # adding the parentheses back breaks `ruff format --check` in CI.
+    except OSError, tomllib.TOMLDecodeError:
         return {}
     out: dict[str, AccountKind] = {}
     for account, kind in table.items():
