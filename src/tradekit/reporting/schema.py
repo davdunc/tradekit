@@ -142,7 +142,9 @@ class AccountPnL(BaseModel):
     """
 
     account: str
-    kind: AccountKind
+    # None = the account id is not in the configured mapping. Never guessed:
+    # a SIM book silently reported as LIVE is a risk-model failure.
+    kind: AccountKind | None = None
     round_trips: int = 0
     wins: int = 0
     losses: int = 0

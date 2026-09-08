@@ -42,8 +42,10 @@ from tradekit.reporting.grading import (
 )
 from tradekit.reporting.ingest import (
     DEFAULT_ACCOUNT_KINDS,
+    account_pnl_from_falcon,
     accounts_from_falcon,
     build_daily_card,
+    default_account_kinds,
     ingest_daily,
     trade_from_dict,
 )
@@ -94,7 +96,9 @@ __all__ = [
     # ingest
     "build_daily_card",
     "ingest_daily",
+    "account_pnl_from_falcon",
     "accounts_from_falcon",
+    "default_account_kinds",
     "trade_from_dict",
     "DEFAULT_ACCOUNT_KINDS",
     # runits
