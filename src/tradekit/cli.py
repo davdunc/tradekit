@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 from rich.console import Console
 
+from tradekit.analysis.gex import DEFAULT_RATE as GEX_DEFAULT_RATE
 from tradekit.config import get_settings, now_et, shared_env_path
 from tradekit.paths import data_dir as tradekit_data_dir
 from tradekit.paths import debate_dir, group_snapshot
@@ -2349,3 +2350,44 @@ def debate(ticker: str, period: str, level: str, no_persist: bool, source: str |
 
     if not no_persist:
         console.print(f"\n[dim]Transcript saved to {debate_dir()}[/dim]")
+
+
+@cli.command()
+@click.option("--ticker", default="SPY", help="Underlying symbol (default SPY).")
+@click.option(
+    "--max-dte",
+    type=int,
+    default=30,
+    help="Include expiries within N days (default 30). Use a short window for an intraday read.",
+)
+@click.option(
+    "--rate",
+    type=float,
+    default=GEX_DEFAULT_RATE,
+    show_default=True,
+    help="Risk-free rate — the 3-month bill, not fed funds.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit raw JSON instead of markdown.")
+def gex(ticker: str, max_dte: int, rate: float, as_json: bool):
+    """Dealer gamma exposure snapshot — the regime read for the morning plan.
+
+    Negative GEX means dealers amplify moves: trends extend and breakouts follow
+    through. Positive GEX means they dampen: ranges hold and fades work. The top
+    magnet strikes double as intraday targets and as acceleration levels when price
+    breaks through one.
+    """
+    import json
+
+    from tradekit.analysis.gex import GEXError, compute_gex, format_markdown, to_dict
+
+    try:
+        result = compute_gex(ticker, max_dte, rate)
+    except GEXError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    if as_json:
+        click.echo(json.dumps(to_dict(result), indent=2, default=str))
+    else:
+        # click.echo, not console.print — rich would treat the markdown table's
+        # square brackets as markup and eat them.
+        click.echo(format_markdown(result))

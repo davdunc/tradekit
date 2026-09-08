@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Gamma exposure snapshot** — `analysis.gex.compute_gex()` aggregates dealer gamma
+  per strike from the CBOE public delayed-quotes chain (free, no API key, real open
+  interest) and classifies the regime that governs whether breakouts extend or fade.
+  Exposed as `tradekit gex [--ticker SPY] [--max-dte N] [--rate R] [--json]`.
+  Same-day (0DTE) contracts contribute and are reported as their own slice; time to
+  expiry is measured to the 16:00 ET close and floored at ten minutes, so gamma stays
+  finite in the closing minutes and expired contracts are dropped rather than floored.
+
 ## [0.2.0] — 2026-07-14
 
 ### Added
