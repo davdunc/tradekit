@@ -2501,3 +2501,295 @@ def cards_gameplan(
         # click.echo, not console.print: Rich would interpret bracketed text in
         # the plan's notes as markup and eat it.
         click.echo(text, nl=False)
+
+
+@cards.command("ingest")
+@click.option(
+    "--falcon-stats",
+    "falcon_stats_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    required=True,
+    help="JSON file: falcon-stats ingest output (list of per-account dicts, or its 'accounts' list).",
+)
+@click.option(
+    "--narrative",
+    "narrative_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="JSON file: trades/discipline/patterns/lessons/etc (see build_daily_card docstring).",
+)
+@click.argument("date", required=False)
+@click.option("--scope", default="GLOBAL", help="Record scope partition.")
+@click.option(
+    "--store",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Report store root (default ~/.tradekit/reports).",
+)
+def cards_ingest(
+    falcon_stats_path: Path,
+    narrative_path: Path | None,
+    date: str | None,
+    scope: str,
+    store: Path | None,
+):
+    """Build a DailyReportCard from falcon-stats output + narrative judgment, and persist it.
+
+    This is the DailyReview workflow's Step 9 — falcon owns the deterministic
+    numbers (carried through unchanged from --falcon-stats), tradekit's
+    narrative.json carries the grades/discipline/patterns/lessons. Run this
+    before 'cards publish', which reads back what this command writes.
+    """
+    import json as _json
+
+    from tradekit.reporting import FileReportStore, ingest_daily
+
+    date = date or now_et().strftime("%Y-%m-%d")
+    falcon_stats = _json.loads(falcon_stats_path.read_text())
+    narrative = _json.loads(narrative_path.read_text()) if narrative_path else None
+    report_store = FileReportStore(root=store)
+    if scope != "GLOBAL":
+        # ReportDocument.scope() is fixed to GLOBAL on the base schema today;
+        # a non-default scope would silently write to GLOBAL anyway, which is
+        # worse than refusing. Revisit if per-scope cards are ever needed.
+        raise click.ClickException(f"--scope {scope!r} not supported yet — DailyReportCard.scope() is fixed to GLOBAL")
+    card = ingest_daily(date, falcon_stats, narrative, report_store)
+    console.print(
+        f"[green]✓ Ingested daily card for {date} — "
+        f"discipline {card.discipline.as_label()} ({card.discipline.graduation}), {len(card.trades)} trades — "
+        f"→ {report_store.root}[/green]"
+    )
+
+
+@cards.command("trend")
+@click.option("--since", default=None, help="Inclusive ISO start date.")
+@click.option("--until", default=None, help="Inclusive ISO end date.")
+@click.option("--scope", default="GLOBAL", help="Record scope partition.")
+@click.option(
+    "--store",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Report store root (default ~/.tradekit/reports).",
+)
+@click.option(
+    "--out",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="Write to a file instead of stdout.",
+)
+def cards_trend(since: str | None, until: str | None, scope: str, store: Path | None, out: Path | None):
+    """Render the canonical multi-day trend table across stored daily cards.
+
+    Same column set (date / LIVE P&L / LIVE RTs / SIM P&L / discipline / avg
+    grade / key pattern) as DailyReview Step 5 and WeeklyReview's Daily
+    Breakdown — see tradekit.reporting.aggregate.DAY_COLUMNS.
+    """
+    from tradekit.reporting import FileReportStore, multi_day_trend, render_multi_day_trend
+
+    report_store = FileReportStore(root=store)
+    items = report_store.query("DAILYCARD", scope=scope, since=since, until=until)
+    if not items:
+        raise click.ClickException(
+            f"No daily cards found under {report_store.root} for scope {scope!r} "
+            f"in range [{since or '...'}, {until or '...'}] — run 'cards ingest' first."
+        )
+    rows = multi_day_trend(items)
+    text = render_multi_day_trend(rows)
+
+    if out is not None:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text)
+        console.print(f"[green]Wrote {len(rows)}-day trend to {out}[/green]")
+    else:
+        click.echo(text, nl=False)
+
+
+# ── cards publish: the deterministic multi-target step function ────────────
+#
+# DailyReview's HARD RULE 4 says publish is not optional and not askable once
+# synthesis (cards ingest) has completed. Before this command existed, that
+# rule lived only in prose, and firing all four targets (private file, Slack,
+# Notion, Daily PNL Tracker) depended on whoever was running the workflow
+# remembering every step by hand — which is exactly how the Daily PNL Tracker
+# went stale for four months (2026-05-08 → 2026-09-15) without anyone noticing.
+# This command makes the publish set a single, reviewable code path instead.
+
+_DEFAULT_SLACK_CHANNEL = "C0B5U2DHB0U"  # #watchlist
+_DEFAULT_PNL_TRACKER_DATA_SOURCE = "335973b9-8fae-80c2-b221-000be8988c79"  # Daily PNL Tracker
+
+
+def _publish_card_to_slack(text: str, *, channel_id: str, thread_ts: str | None) -> None:
+    """Post the public-clean summary to Slack, via the Notion/Slack MCP that the parent Claude session holds auth for."""
+    import subprocess
+
+    thread_note = f" Post it as a threaded reply to message ts {thread_ts}." if thread_ts else ""
+    cmd = [
+        "claude",
+        "--print",
+        "--model",
+        "haiku",
+        "--allowed-tools",
+        "mcp__claude_ai_Slack__slack_send_message",
+        "--system-prompt",
+        (
+            "You have access to the Slack MCP. Post the exact text given by the user, verbatim, "
+            f"as a message to channel_id {channel_id!r}.{thread_note} Do not edit, summarize, "
+            "reformat, or add commentary of your own. Reply with just the message link on success."
+        ),
+    ]
+    subprocess.run(cmd, input=text, text=True, timeout=60)
+
+
+def _publish_card_to_notion_page(text: str, *, page_id: str) -> None:
+    """Append the public-clean EOD Review section to an existing Notion page."""
+    import subprocess
+
+    cmd = [
+        "claude",
+        "--print",
+        "--model",
+        "haiku",
+        "--allowed-tools",
+        "mcp__claude_ai_Notion__notion-update-page",
+        "--system-prompt",
+        (
+            f"You have access to the Notion MCP. Call notion-update-page with page_id {page_id!r}, "
+            "command 'insert_content', position {'type': 'end'}, and content set to a level-2 "
+            "heading 'EOD Review' followed by the exact text given by the user, verbatim. Do not "
+            "edit, summarize, or add dollar amounts. Reply with just 'done' on success."
+        ),
+    ]
+    subprocess.run(cmd, input=text, text=True, timeout=60)
+
+
+def _publish_card_to_pnl_tracker(card, *, data_source_id: str) -> None:
+    """Add one row to the Daily PNL Tracker database."""
+    import json as _json
+    import subprocess
+
+    combined = card.combined_realized
+    notes = card.headline or f"Discipline {card.discipline.as_label()}."
+    payload = _json.dumps(
+        {
+            "Trading Date": card.date,
+            "date:Date:start": card.date,
+            "PNL": combined,
+            "Day Result": "Green" if combined >= 0 else "Red",
+            "Notes": notes,
+        }
+    )
+    cmd = [
+        "claude",
+        "--print",
+        "--model",
+        "haiku",
+        "--allowed-tools",
+        "mcp__claude_ai_Notion__notion-create-pages",
+        "--system-prompt",
+        (
+            f"You have access to the Notion MCP. Create ONE page in data_source_id {data_source_id!r} "
+            "using the JSON object given by the user, verbatim, as the page's properties. Reply with "
+            "just the page URL on success."
+        ),
+    ]
+    subprocess.run(cmd, input=payload, text=True, timeout=60)
+
+
+@cards.command("publish")
+@click.argument("date", required=False)
+@click.option("--scope", default="GLOBAL", help="Record scope partition.")
+@click.option(
+    "--store",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Report store root (default ~/.tradekit/reports).",
+)
+@click.option(
+    "--reviews-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Write the full private review (with $ amounts + behavioral contract) as REVIEW-<date>.md here.",
+)
+@click.option("--slack-channel", default=_DEFAULT_SLACK_CHANNEL, help="Slack channel id for the public post.")
+@click.option("--slack-thread", default=None, help="Reply into this thread ts instead of posting fresh.")
+@click.option("--notion-page-id", default=None, help="Notion page id to append the public EOD Review section to.")
+@click.option(
+    "--pnl-tracker-id",
+    default=_DEFAULT_PNL_TRACKER_DATA_SOURCE,
+    help="Daily PNL Tracker data_source_id.",
+)
+@click.option("--live-r-dollars", type=float, default=28.0, help="1R in dollars for the LIVE account.")
+@click.option("--sim-r-dollars", type=float, default=75.0, help="1R in dollars for the SIM account.")
+@click.option("--skip-slack", is_flag=True, help="Skip the Slack post.")
+@click.option("--skip-notion", is_flag=True, help="Skip the Notion EOD Review append.")
+@click.option("--skip-pnl-tracker", is_flag=True, help="Skip the Daily PNL Tracker entry.")
+@click.option("--dry-run", is_flag=True, help="Render every target and print it; publish nothing.")
+def cards_publish(
+    date: str | None,
+    scope: str,
+    store: Path | None,
+    reviews_dir: Path | None,
+    slack_channel: str,
+    slack_thread: str | None,
+    notion_page_id: str | None,
+    pnl_tracker_id: str,
+    live_r_dollars: float,
+    sim_r_dollars: float,
+    skip_slack: bool,
+    skip_notion: bool,
+    skip_pnl_tracker: bool,
+    dry_run: bool,
+):
+    """Publish a stored daily card to every deterministic target in one step.
+
+    Loads the DailyReportCard already written by 'cards ingest' for DATE, then
+    fires the private Reviews file (if --reviews-dir given), Slack, the Notion
+    EOD Review section, and the Daily PNL Tracker entry. Per HARD RULE 4, this
+    command does not ask for confirmation and has no "publish y/n" mode —
+    pass --skip-* flags or --dry-run if a target genuinely shouldn't fire.
+
+    Slack and Notion delegate to a scoped headless `claude --print` call
+    (same pattern as 'publish-review') rather than holding API credentials in
+    tradekit itself.
+    """
+    from tradekit.reporting import DailyReportCard, FileReportStore, RiskConfig, render_daily_card, render_public_summary
+    from tradekit.reporting.schema import AccountKind
+
+    date = date or now_et().strftime("%Y-%m-%d")
+    report_store = FileReportStore(root=store)
+    item = report_store.get("DAILYCARD", date, scope=scope)
+    if item is None:
+        raise click.ClickException(
+            f"No daily card stored for {date} (scope {scope}) under {report_store.root} — run 'cards ingest' first."
+        )
+    card = DailyReportCard.from_item(item)
+
+    configs = {
+        AccountKind.LIVE: RiskConfig(r_dollars=live_r_dollars, account="LIVE"),
+        AccountKind.SIM: RiskConfig(r_dollars=sim_r_dollars, account="SIM"),
+    }
+    public_text = render_public_summary(card, configs)
+
+    if dry_run:
+        console.print(f"[yellow]--dry-run for {date}: rendered output only, nothing published[/yellow]\n")
+        click.echo(public_text)
+        return
+
+    if reviews_dir is not None:
+        reviews_dir.mkdir(parents=True, exist_ok=True)
+        private_path = reviews_dir / f"REVIEW-{date}.md"
+        private_path.write_text(render_daily_card(card))
+        console.print(f"[green]✓ Private review written to {private_path}[/green]")
+
+    if not skip_slack:
+        _publish_card_to_slack(public_text, channel_id=slack_channel, thread_ts=slack_thread)
+        console.print("[green]✓ Slack published[/green]")
+    if not skip_notion:
+        if notion_page_id is None:
+            console.print("[yellow]⚠ --notion-page-id not given — skipping the Notion EOD Review append[/yellow]")
+        else:
+            _publish_card_to_notion_page(public_text, page_id=notion_page_id)
+            console.print("[green]✓ Notion EOD Review appended[/green]")
+    if not skip_pnl_tracker:
+        _publish_card_to_pnl_tracker(card, data_source_id=pnl_tracker_id)
+        console.print("[green]✓ Daily PNL Tracker entry added[/green]")

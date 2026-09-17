@@ -26,7 +26,13 @@ from typing import ClassVar, Self
 
 from pydantic import BaseModel, Field, field_validator
 
-from tradekit.reporting.grading import DISCIPLINE_MAX, Grade
+from tradekit.reporting.grading import (
+    DISCIPLINE_MAX,
+    Grade,
+    graduation_from_met,
+    graduation_violation_descriptions_from_met,
+    graduation_violations_from_met,
+)
 
 SCHEMA_VERSION = "1.0"
 
@@ -245,6 +251,23 @@ class DisciplineResult(BaseModel):
 
     def as_label(self) -> str:
         return f"{self.total}/{self.out_of}"
+
+    @property
+    def graduation(self) -> str:
+        """Binary Discipline Workshop graduation call: ``"W"`` or ``"L"``.
+
+        Recomputed from ``met`` on every read (not persisted separately), so it
+        stays correct even for cards ingested before this field existed.
+        """
+        return graduation_from_met(self.met)
+
+    def graduation_violations(self) -> list[str]:
+        """Hard-violation criterion keys that failed (empty when graduation == "W")."""
+        return graduation_violations_from_met(self.met)
+
+    def graduation_violation_descriptions(self) -> list[str]:
+        """Human-readable descriptions of the failed hard-violation criteria."""
+        return graduation_violation_descriptions_from_met(self.met)
 
 
 # ── Documents ────────────────────────────────────────────────────────────────

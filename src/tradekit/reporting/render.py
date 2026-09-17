@@ -9,7 +9,7 @@ shared R-unit formatter so dollars always derive from the same R-CONFIG.
 from __future__ import annotations
 
 from tradekit.reporting.aggregate import DayRow, WeeklyRollup
-from tradekit.reporting.runits import RiskConfig, fmt_r, fmt_r_level
+from tradekit.reporting.runits import RiskConfig, fmt_r, fmt_r_level, r_multiple
 from tradekit.reporting.schema import (
     AccountKind,
     AccountPnL,
@@ -143,6 +143,12 @@ def render_daily_card(card: DailyReportCard, config: RiskConfig | None = None) -
     # Discipline — fixed rubric breakdown so the number is reproducible.
     lines.append(f"### Discipline Score: {card.discipline.as_label()}")
     if card.discipline.met:
+        if card.discipline.graduation == "L":
+            why = ", ".join(card.discipline.graduation_violation_descriptions())
+            lines.append(f"**Discipline Workshop Graduation: L** — {why}")
+        else:
+            lines.append("**Discipline Workshop Graduation: W**")
+        lines.append("")
         from tradekit.reporting.grading import DISCIPLINE_RUBRIC
 
         for c in DISCIPLINE_RUBRIC:
@@ -169,15 +175,78 @@ def render_daily_card(card: DailyReportCard, config: RiskConfig | None = None) -
     return "\n".join(lines).rstrip() + "\n"
 
 
+def render_public_summary(
+    card: DailyReportCard,
+    account_configs: dict[AccountKind, RiskConfig] | None = None,
+) -> str:
+    """Render the channel-topology-safe version for Slack / the public Notion page.
+
+    Two things never appear here, by design, regardless of what the full
+    ``render_daily_card`` document contains:
+
+    * **Dollar amounts.** P&L is expressed in R-units only. ``account_configs``
+      supplies each account's R-dollar basis so the multiple can be computed,
+      but the formatted string always omits the derived dollar (``fmt_r`` is
+      called with ``config=None``) — the basis is a private number even though
+      the multiple it produces is not.
+    * **The behavioral contract.** That section is written for the trader, not
+      an audience, and is intentionally never included in the return value.
+
+    Grades and one-line verdicts are kept (they're the accountability
+    snapshot), but per-trade dollar figures are dropped the same way.
+    """
+    configs = account_configs or {}
+    lines: list[str] = [f"*TRADE REVIEW — {card.date}*"]
+
+    r_parts: list[str] = []
+    for kind in (AccountKind.LIVE, AccountKind.SIM):
+        a = card.account(kind)
+        if a is None:
+            continue
+        cfg = configs.get(kind)
+        r = r_multiple(a.realized, cfg.r_dollars) if cfg else None
+        r_parts.append(f"{kind.value}: {fmt_r(r, None)}")
+    if r_parts:
+        lines[0] += " | " + " · ".join(r_parts)
+    lines.append("")
+
+    lines.append(f"*Discipline Score:* {card.discipline.as_label()} ({card.discipline.graduation})")
+    if card.one_percent_result:
+        lines.append(f"*1% Change Result:* {card.one_percent_result}")
+    lines.append("")
+
+    if card.trades:
+        lines.append("*TRADES:*")
+        for t in card.trades:
+            acct = t.account_kind.value if t.account_kind else t.account
+            direction = t.direction.value if t.direction else "—"
+            line = f"{t.ticker} {acct} {direction} → *{_grade(t.grade)}*"
+            if t.verdict:
+                line += f" — {t.verdict}"
+            lines.append(line)
+        lines.append("")
+
+    if card.patterns:
+        lines.append("*PATTERN TODAY:*")
+        lines.append(card.patterns[0])
+        lines.append("")
+
+    if card.lessons:
+        lines.append("*LESSON:*")
+        lines.append(card.lessons[0])
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def render_multi_day_trend(rows: list[DayRow], title: str = "Multi-Day Trend") -> str:
     """The one canonical comparison table — used by daily AND weekly views."""
     lines = [f"### {title}", ""]
-    lines.append("| Date | LIVE P&L | LIVE RTs | SIM P&L | Discipline | Avg Grade | Key Pattern |")
-    lines.append("|------|---------:|---------:|--------:|:----------:|:---------:|-------------|")
+    lines.append("| Date | LIVE P&L | LIVE RTs | SIM P&L | Discipline | W/L | Avg Grade | Key Pattern |")
+    lines.append("|------|---------:|---------:|--------:|:----------:|:---:|:---------:|-------------|")
     for r in rows:
         lines.append(
             f"| {r.date} | {_money(r.live_pnl)} | {r.live_round_trips} | {_money(r.sim_pnl)} "
-            f"| {r.discipline}/{r.discipline_out_of} | {_grade(r.avg_grade)} | {r.key_pattern} |"
+            f"| {r.discipline}/{r.discipline_out_of} | {r.graduation} | {_grade(r.avg_grade)} | {r.key_pattern} |"
         )
     return "\n".join(lines) + "\n"
 

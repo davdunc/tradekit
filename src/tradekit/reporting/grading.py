@@ -102,6 +102,37 @@ DISCIPLINE_RUBRIC: tuple[DisciplineCriterion, ...] = (
 DISCIPLINE_MAX = sum(c.points for c in DISCIPLINE_RUBRIC)  # == 10
 _RUBRIC_BY_KEY = {c.key: c for c in DISCIPLINE_RUBRIC}
 
+# Criteria that gate the binary Discipline Workshop graduation call. These are
+# the rubric keys tied to an actual rule violation (traded off the plan, blew
+# a stop, revenge-traded, or let LIVE serve a parallel impulse book) rather
+# than a quality/optimization criterion (setup selection, pacing after a loss,
+# conviction sizing). A day can score well on the 0-10 scale and still fail
+# graduation if any one of these is unmet — that gap (a passing score hiding a
+# real violation) is exactly what a pure numeric threshold missed in practice.
+HARD_VIOLATION_KEYS: frozenset[str] = frozenset(
+    {"followed_game_plan", "honored_stops", "no_revenge_trading", "account_separation"}
+)
+
+
+def graduation_from_met(met: dict[str, bool]) -> str:
+    """Shared W/L logic — any hard-violation criterion unmet is an automatic L.
+
+    Public so :class:`~tradekit.reporting.schema.DisciplineResult` (the
+    persisted form) can recompute the same call from its own ``met`` dict
+    without duplicating :data:`HARD_VIOLATION_KEYS`.
+    """
+    return "L" if any(not met.get(k, False) for k in HARD_VIOLATION_KEYS) else "W"
+
+
+def graduation_violations_from_met(met: dict[str, bool]) -> list[str]:
+    """Which hard-violation keys failed, in rubric order."""
+    return [c.key for c in DISCIPLINE_RUBRIC if c.key in HARD_VIOLATION_KEYS and not met.get(c.key, False)]
+
+
+def graduation_violation_descriptions_from_met(met: dict[str, bool]) -> list[str]:
+    """Human-readable descriptions of the failed hard-violation criteria."""
+    return [_RUBRIC_BY_KEY[k].description for k in graduation_violations_from_met(met)]
+
 
 @dataclass
 class DisciplineScore:
@@ -129,6 +160,22 @@ class DisciplineScore:
     def as_label(self) -> str:
         """Render as ``"7/10"``."""
         return f"{self.total}/{self.out_of}"
+
+    @property
+    def graduation(self) -> str:
+        """Binary Discipline Workshop graduation call: ``"W"`` or ``"L"``.
+
+        Independent of :attr:`total` — see :data:`HARD_VIOLATION_KEYS`.
+        """
+        return graduation_from_met(self.met)
+
+    def graduation_violations(self) -> list[str]:
+        """Hard-violation criterion keys that failed (empty when graduation == "W")."""
+        return graduation_violations_from_met(self.met)
+
+    def graduation_violation_descriptions(self) -> list[str]:
+        """Human-readable descriptions of the failed hard-violation criteria."""
+        return graduation_violation_descriptions_from_met(self.met)
 
 
 def discipline_from_flags(**flags: bool) -> DisciplineScore:

@@ -13,6 +13,7 @@ from tradekit.reporting import (
     DailyReportCard,
     Direction,
     DisciplineResult,
+    DisciplineScore,
     FileReportStore,
     GamePlanRecord,
     Grade,
@@ -37,6 +38,7 @@ from tradekit.reporting import (
     render_dw_plan,
     render_game_plan,
     render_multi_day_trend,
+    render_public_summary,
     render_weekly,
     target_for_r,
     weekly_rollup,
@@ -101,6 +103,47 @@ class TestGrading:
     def test_discipline_ignores_unknown_keys(self):
         score = discipline_from_flags(nonexistent_criterion=True)
         assert score.total == 0
+
+    def test_graduation_is_win_when_all_hard_criteria_met(self):
+        # Low score on the soft/quality criteria — but all four hard-violation
+        # criteria (followed_game_plan, honored_stops, no_revenge_trading,
+        # account_separation) are met, so this still graduates as a W.
+        score = discipline_from_flags(
+            followed_game_plan=True,
+            honored_stops=True,
+            no_revenge_trading=True,
+            account_separation=True,
+        )
+        assert score.total == 6  # 2 + 2 + 1 + 1
+        assert score.graduation == "W"
+        assert score.graduation_violations() == []
+
+    def test_graduation_is_loss_when_a_hard_criterion_fails_despite_high_score(self):
+        # High score overall — but one hard-violation criterion (honored_stops)
+        # failed. A passing score must not paper over a real violation.
+        score = discipline_from_flags(
+            followed_game_plan=True,
+            playbook_setups_only=True,
+            honored_stops=False,
+            no_revenge_trading=True,
+            paused_after_losses=True,
+            thesis_trade_live=True,
+            appropriate_sizing=True,
+            account_separation=True,
+        )
+        assert score.total == 8  # everything except honored_stops (2 points)
+        assert score.graduation == "L"
+        assert score.graduation_violations() == ["honored_stops"]
+        assert score.graduation_violation_descriptions() == ["Honored stops; no averaging down into losers"]
+
+    def test_graduation_treats_unrecorded_hard_criteria_as_unmet(self):
+        # discipline_from_flags always fills every rubric key, but a DisciplineResult
+        # rebuilt from an older/partial persisted record may be missing a key
+        # entirely. That must default to "violated", not "assumed fine" — the
+        # same omitted-defaults-to-False convention discipline_from_flags itself uses.
+        score = DisciplineScore(met={"followed_game_plan": True, "honored_stops": True})
+        assert score.graduation == "L"
+        assert set(score.graduation_violations()) == {"no_revenge_trading", "account_separation"}
 
 
 class TestSchema:
@@ -218,11 +261,27 @@ class TestAggregateAndRender:
         assert "| **SIM (TR4425)** |" in out
         assert "| **COMBINED** |" in out
         assert "Discipline Score: 6/10" in out
+        # _sample_card()'s met dict never recorded no_revenge_trading, and an
+        # unrecorded hard-violation criterion defaults to unmet (same
+        # omitted-defaults-to-False convention as discipline_from_flags) — so
+        # this specific fixture grades L. The clean W/L cases are unit-tested
+        # directly against DisciplineScore in TestGrading instead of relying
+        # on this fixture's incidental shape.
+        assert "Discipline Workshop Graduation: L" in out
+
+    def test_render_daily_card_shows_graduation_loss_reason(self):
+        card = _sample_card()
+        card.discipline.met["no_revenge_trading"] = True  # complete the hard-violation set
+        card.discipline.met["honored_stops"] = False  # then break exactly one, on purpose
+        out = render_daily_card(card, RiskConfig(r_dollars=280))
+        assert "Discipline Workshop Graduation: L" in out
+        assert "Honored stops" in out
 
     def test_render_multi_day_columns_stable(self):
         rows = multi_day_trend([_sample_card().to_item()])
         out = render_multi_day_trend(rows)
-        assert "| Date | LIVE P&L | LIVE RTs | SIM P&L | Discipline | Avg Grade | Key Pattern |" in out
+        assert "| Date | LIVE P&L | LIVE RTs | SIM P&L | Discipline | W/L | Avg Grade | Key Pattern |" in out
+        assert rows[0].graduation == "L"
 
     def test_render_weekly_reuses_trend_table(self):
         items = [_sample_card(d).to_item() for d in ("2026-06-09", "2026-06-10")]
@@ -230,6 +289,45 @@ class TestAggregateAndRender:
         out = render_weekly(weekly_rollup(items), rows)
         assert "Daily Breakdown" in out
         assert "Setup Performance" in out
+
+
+class TestRenderPublicSummary:
+    """render_public_summary is the channel-topology-safe view — no $, no behavioral contract."""
+
+    def test_never_leaks_a_dollar_amount(self):
+        out = render_public_summary(
+            _sample_card(), {AccountKind.LIVE: RiskConfig(r_dollars=28), AccountKind.SIM: RiskConfig(r_dollars=75)}
+        )
+        assert "$" not in out
+
+    def test_never_leaks_the_behavioral_contract(self):
+        out = render_public_summary(_sample_card())
+        assert "Hold the thesis trade to plan" not in out
+        assert "Behavioral Contract" not in out
+
+    def test_r_multiple_uses_the_right_basis_per_account(self):
+        out = render_public_summary(
+            _sample_card(), {AccountKind.LIVE: RiskConfig(r_dollars=28), AccountKind.SIM: RiskConfig(r_dollars=75)}
+        )
+        # LIVE realized 100.0 / 28 = 3.57R; SIM realized 20.0 / 75 = 0.27R.
+        assert "LIVE: +3.6R" in out
+        assert "SIM: +0.3R" in out
+
+    def test_without_configs_reports_r_unavailable_not_a_dollar(self):
+        out = render_public_summary(_sample_card())
+        assert "R n/a" in out
+        assert "$" not in out
+
+    def test_still_carries_discipline_score_and_grades(self):
+        out = render_public_summary(_sample_card())
+        assert "Discipline Score:* 6/10" in out
+        assert "NVDA" in out
+        assert "*A*" in out
+
+    def test_still_carries_the_top_pattern_and_lesson(self):
+        out = render_public_summary(_sample_card())
+        assert "Exited winners early" in out
+        assert "Let the thesis trade breathe to first target" in out
 
 
 class TestIngest:

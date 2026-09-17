@@ -22,6 +22,7 @@ DAY_COLUMNS: tuple[str, ...] = (
     "live_round_trips",
     "sim_pnl",
     "discipline",
+    "graduation",
     "avg_grade",
     "key_pattern",
 )
@@ -37,6 +38,7 @@ class DayRow:
     sim_pnl: float = 0.0
     discipline: int = 0
     discipline_out_of: int = 10
+    graduation: str = "W"
     avg_grade: Grade | None = None
     key_pattern: str = ""
 
@@ -53,6 +55,7 @@ def day_row_from_card(card: DailyReportCard) -> DayRow:
         sim_pnl=sim.realized if sim else 0.0,
         discipline=card.discipline.total,
         discipline_out_of=card.discipline.out_of,
+        graduation=card.discipline.graduation,
         avg_grade=average_grade(grades),
         key_pattern=card.patterns[0] if card.patterns else "",
     )

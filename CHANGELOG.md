@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Discipline Workshop graduation call (W/L)** — `DisciplineScore.graduation` /
+  `DisciplineResult.graduation` compute a binary win/loss independent of the 0-10
+  score: any of the four hard-violation criteria (`followed_game_plan`,
+  `honored_stops`, `no_revenge_trading`, `account_separation`) being unmet forces
+  an `L`, regardless of the numeric total. `graduation_violations()` /
+  `graduation_violation_descriptions()` name which criteria failed. Surfaced in
+  `render_daily_card`, `render_public_summary`, `render_multi_day_trend` (new
+  `W/L` column), `DayRow`/`DAY_COLUMNS`, and the `cards ingest` CLI confirmation
+  line, so both machines derive the same graduation call from the same rubric
+  flags instead of it being a manual per-day judgment call. An unrecorded hard
+  criterion defaults to unmet (violated), matching `discipline_from_flags`'s
+  existing omitted-defaults-to-False convention.
 - **Gamma exposure snapshot** — `analysis.gex.compute_gex()` aggregates dealer gamma
   per strike from the CBOE public delayed-quotes chain (free, no API key, real open
   interest) and classifies the regime that governs whether breakouts extend or fade.

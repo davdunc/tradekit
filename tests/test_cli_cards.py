@@ -7,6 +7,9 @@ from click.testing import CliRunner
 
 from tradekit.cli import cli
 from tradekit.reporting import (
+    AccountKind,
+    AccountPnL,
+    DailyReportCard,
     Direction,
     FileReportStore,
     GamePlanRecord,
@@ -175,3 +178,287 @@ class TestCardsGroup:
         result = _run(["cards", "gameplan", "--help"])
         assert result.exit_code == 0
         assert "Discipline Workshop" in result.output
+
+
+FALCON_STATS_FIXTURE = [
+    {"account": "1RB16917", "round_trips": 22, "wins": 14, "losses": 8, "realized": -95.40, "streak": "5W"},
+    {"account": "TR4425", "round_trips": 22, "wins": 12, "losses": 10, "realized": 60.65, "streak": "1L"},
+]
+
+NARRATIVE_FIXTURE = {
+    "headline": "LIVE broke its own daily-loss cap.",
+    "trades": [
+        {
+            "ticker": "COIN",
+            "account": "1RB16917",
+            "direction": "SHORT",
+            "shares": 35,
+            "realized_pnl": -131.20,
+            "grade": "F",
+            "verdict": "Traded past its own stated void time.",
+        }
+    ],
+    "discipline": {"met": {"no_averaging_down": False}},
+    "patterns": ["Averaging down into a loser, LIVE, past the void time."],
+    "lessons": ["A stated void time has to function as a hard stop."],
+    "behavioral_contract": "COIN is locked for the rest of this week.",
+}
+
+
+@pytest.fixture
+def falcon_stats_file(tmp_path):
+    path = tmp_path / "falcon.json"
+    path.write_text(json.dumps(FALCON_STATS_FIXTURE))
+    return path
+
+
+@pytest.fixture
+def narrative_file(tmp_path):
+    path = tmp_path / "narrative.json"
+    path.write_text(json.dumps(NARRATIVE_FIXTURE))
+    return path
+
+
+class TestCardsIngest:
+    def test_ingest_persists_a_retrievable_card(self, tmp_path, falcon_stats_file, narrative_file):
+        store_root = tmp_path / "store"
+        result = _run(
+            [
+                "cards",
+                "ingest",
+                "--falcon-stats",
+                str(falcon_stats_file),
+                "--narrative",
+                str(narrative_file),
+                "2026-09-15",
+                "--store",
+                str(store_root),
+            ]
+        )
+        assert result.exit_code == 0
+        assert "discipline" in result.output.lower()
+
+        store = FileReportStore(root=store_root)
+        item = store.get("DAILYCARD", "2026-09-15")
+        assert item is not None
+        card = DailyReportCard.from_item(item)
+        assert card.account(AccountKind.LIVE).realized == -95.40
+        assert card.account(AccountKind.SIM).realized == 60.65
+        assert card.trades[0].ticker == "COIN"
+        assert card.behavioral_contract == "COIN is locked for the rest of this week."
+
+    def test_ingest_without_narrative_still_persists_falcon_numbers(self, tmp_path, falcon_stats_file):
+        store_root = tmp_path / "store"
+        result = _run(
+            ["cards", "ingest", "--falcon-stats", str(falcon_stats_file), "2026-09-15", "--store", str(store_root)]
+        )
+        assert result.exit_code == 0
+        store = FileReportStore(root=store_root)
+        card = DailyReportCard.from_item(store.get("DAILYCARD", "2026-09-15"))
+        assert card.account(AccountKind.LIVE).realized == -95.40
+        assert card.trades == []
+
+    def test_missing_falcon_stats_file_is_a_usage_error(self, tmp_path):
+        result = _run(["cards", "ingest", "--falcon-stats", str(tmp_path / "nope.json"), "2026-09-15"])
+        assert result.exit_code != 0
+
+
+@pytest.fixture
+def two_day_store(tmp_path, falcon_stats_file, narrative_file):
+    """A report store with daily cards on two consecutive dates."""
+    store_root = tmp_path / "store"
+    _run(
+        [
+            "cards",
+            "ingest",
+            "--falcon-stats",
+            str(falcon_stats_file),
+            "--narrative",
+            str(narrative_file),
+            "2026-09-14",
+            "--store",
+            str(store_root),
+        ]
+    )
+    _run(
+        [
+            "cards",
+            "ingest",
+            "--falcon-stats",
+            str(falcon_stats_file),
+            "--narrative",
+            str(narrative_file),
+            "2026-09-15",
+            "--store",
+            str(store_root),
+        ]
+    )
+    return store_root
+
+
+class TestCardsTrend:
+    def test_trend_lists_both_days_date_sorted(self, two_day_store):
+        result = _run(["cards", "trend", "--store", str(two_day_store)])
+        assert result.exit_code == 0
+        assert result.output.index("2026-09-14") < result.output.index("2026-09-15")
+        assert "$-95.40" in result.output
+        assert "$+60.65" in result.output
+
+    def test_since_filters_out_earlier_days(self, two_day_store):
+        result = _run(["cards", "trend", "--store", str(two_day_store), "--since", "2026-09-15"])
+        assert "2026-09-14" not in result.output
+        assert "2026-09-15" in result.output
+
+    def test_no_cards_in_range_is_a_named_error(self, tmp_path):
+        result = _run(["cards", "trend", "--store", str(tmp_path / "empty")])
+        assert result.exit_code == 1
+        assert "cards ingest" in _errtext(result)
+
+    def test_out_writes_the_same_table(self, two_day_store, tmp_path):
+        dest = tmp_path / "trend.md"
+        _run(["cards", "trend", "--store", str(two_day_store), "--out", str(dest)])
+        assert "Multi-Day Trend" in dest.read_text()
+
+
+class TestCardsPublish:
+    def test_missing_card_is_a_named_error(self, tmp_path):
+        result = _run(["cards", "publish", "2099-01-01", "--store", str(tmp_path)])
+        assert result.exit_code == 1
+        assert "cards ingest" in _errtext(result)
+
+    def test_dry_run_prints_public_summary_and_calls_nothing_external(
+        self, tmp_path, falcon_stats_file, narrative_file, monkeypatch
+    ):
+        store_root = tmp_path / "store"
+        _run(
+            [
+                "cards",
+                "ingest",
+                "--falcon-stats",
+                str(falcon_stats_file),
+                "--narrative",
+                str(narrative_file),
+                "2026-09-15",
+                "--store",
+                str(store_root),
+            ]
+        )
+
+        calls = []
+        monkeypatch.setattr("subprocess.run", lambda *a, **k: calls.append((a, k)))
+
+        result = _run(["cards", "publish", "2026-09-15", "--store", str(store_root), "--dry-run"])
+        assert result.exit_code == 0
+        assert calls == []
+        # The public render, not the private one — no $ amounts, no behavioral contract.
+        assert "TRADE REVIEW" in result.output
+        assert "$" not in result.output
+        assert "locked for the rest of this week" not in result.output
+
+    def test_reviews_dir_writes_the_full_private_card(
+        self, tmp_path, falcon_stats_file, narrative_file, monkeypatch
+    ):
+        store_root = tmp_path / "store"
+        _run(
+            [
+                "cards",
+                "ingest",
+                "--falcon-stats",
+                str(falcon_stats_file),
+                "--narrative",
+                str(narrative_file),
+                "2026-09-15",
+                "--store",
+                str(store_root),
+            ]
+        )
+        monkeypatch.setattr("subprocess.run", lambda *a, **k: None)
+        reviews_dir = tmp_path / "reviews"
+
+        result = _run(
+            [
+                "cards",
+                "publish",
+                "2026-09-15",
+                "--store",
+                str(store_root),
+                "--reviews-dir",
+                str(reviews_dir),
+            ]
+        )
+        assert result.exit_code == 0
+        private_text = (reviews_dir / "REVIEW-2026-09-15.md").read_text()
+        # The private file DOES carry $ amounts and the behavioral contract —
+        # only the public targets are stripped.
+        assert "$-95.40" in private_text or "$-131.20" in private_text
+        assert "locked for the rest of this week" in private_text
+
+    def test_skip_flags_prevent_the_matching_publish_call(
+        self, tmp_path, falcon_stats_file, narrative_file, monkeypatch
+    ):
+        store_root = tmp_path / "store"
+        _run(
+            [
+                "cards",
+                "ingest",
+                "--falcon-stats",
+                str(falcon_stats_file),
+                "--narrative",
+                str(narrative_file),
+                "2026-09-15",
+                "--store",
+                str(store_root),
+            ]
+        )
+
+        calls = []
+        monkeypatch.setattr("subprocess.run", lambda *a, **k: calls.append(a[0]))
+
+        result = _run(
+            [
+                "cards",
+                "publish",
+                "2026-09-15",
+                "--store",
+                str(store_root),
+                "--skip-slack",
+                "--skip-notion",
+                "--notion-page-id",
+                "fake-page-id",
+            ]
+        )
+        assert result.exit_code == 0
+        # Only the PNL Tracker call should have fired.
+        assert len(calls) == 1
+        assert "mcp__claude_ai_Notion__notion-create-pages" in calls[0]
+
+    def test_notion_append_skipped_without_a_page_id_but_others_still_fire(
+        self, tmp_path, falcon_stats_file, narrative_file, monkeypatch
+    ):
+        store_root = tmp_path / "store"
+        _run(
+            [
+                "cards",
+                "ingest",
+                "--falcon-stats",
+                str(falcon_stats_file),
+                "--narrative",
+                str(narrative_file),
+                "2026-09-15",
+                "--store",
+                str(store_root),
+            ]
+        )
+
+        calls = []
+        monkeypatch.setattr("subprocess.run", lambda *a, **k: calls.append(a[0]))
+
+        result = _run(["cards", "publish", "2026-09-15", "--store", str(store_root)])
+        assert result.exit_code == 0
+        assert "⚠" in result.output or "not given" in result.output
+        # Slack + PNL Tracker fire; Notion is skipped for lack of a page id.
+        assert len(calls) == 2
+        joined = [" ".join(c) for c in calls]
+        assert any("slack_send_message" in c for c in joined)
+        assert any("notion-create-pages" in c for c in joined)
+        assert not any("notion-update-page" in c for c in joined)

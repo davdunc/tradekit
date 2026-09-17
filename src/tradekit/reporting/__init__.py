@@ -28,6 +28,7 @@ Note the deliberate split from the sibling :mod:`tradekit.reports` package:
 from tradekit.reporting.aggregate import (
     DayRow,
     WeeklyRollup,
+    day_row_from_card,
     multi_day_trend,
     weekly_rollup,
 )
@@ -55,6 +56,7 @@ from tradekit.reporting.render import (
     render_dw_plan,
     render_game_plan,
     render_multi_day_trend,
+    render_public_summary,
     render_weekly,
 )
 from tradekit.reporting.runits import (
@@ -135,12 +137,14 @@ __all__ = [
     # aggregate
     "DayRow",
     "WeeklyRollup",
+    "day_row_from_card",
     "multi_day_trend",
     "weekly_rollup",
     # render
     "render_daily_card",
     "render_weekly",
     "render_multi_day_trend",
+    "render_public_summary",
     "render_game_plan",
     "render_dw_plan",
     "DW_CLOSING_LINE",
