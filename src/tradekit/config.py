@@ -98,6 +98,13 @@ class DataSettings(BaseSettings):
     backtest_secret_key: str = ""
     backtest_bucket: str = "flatfiles"
     backtest_endpoint: str = "https://files.massive.com"
+    # Separate credential from `massive_api_key` (MCP path, used by MassiveProvider)
+    # and from `backtest_access_key`/`backtest_secret_key` (S3 flat files), despite
+    # being the same vendor (Massive IS Polygon — see docs/SPEC.md Known Gaps).
+    # Used for the direct REST aggs endpoint (api.polygon.io), currently only by
+    # reports/blotter.py's same-day fallback. Consolidating these three schemes is
+    # tracked, not done here.
+    polygon_api_key: str = ""
 
 
 class ScreenerSettings(BaseSettings):

@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `$TRADEKIT_ACCOUNT_KINDS` then `[accounts]` in `~/.config/tradekit/accounts.toml`, and an
   unmapped account renders `UNMAPPED (<id>)` rather than claiming a risk basis it has not been
   told. `AccountPnL.kind` is `Optional` so "unknown" is a real state
+- **Round-trip blotter renders empty charts for the current session's date.**
+  `reports/blotter.py` sourced minute bars only from the Massive S3 flat file, which
+  isn't published until the day after the session — a same-day blotter run got
+  "no bars in window" on every PNG with no visible error (the failure is logged at
+  exception-type granularity only, per CWE-209 discipline, so it read as silent).
+  `fetch_minute_bars` now falls back to the Massive/Polygon REST aggs API
+  (`POLYGON_API_KEY`, a new `polygon_api_key` setting — separate credential from
+  `massive_api_key`/`backtest_*`, see `docs/SPEC.md` gap G9) when the flat file
+  isn't available yet. Historical dates are unaffected — S3 remains the primary,
+  unchanged path.
 
 ## [0.3.0] — 2026-08-29
 

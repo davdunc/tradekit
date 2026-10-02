@@ -109,6 +109,13 @@ Current implementations: `yahoo` (default), `massive`, `backtest` (S3 flat files
 delayed data has to make that visible to callers. A quote whose lag is unknown at
 the call site is how a 15-minute-old price ends up on a live order ticket.
 
+**`get_history` cannot serve an explicit historical date — see G9.** It takes only
+a relative `period` anchored to `datetime.now()`. A caller that needs bars for one
+specific past date (not "the last N days") cannot use the provider layer at all
+today; `reports/blotter.py` works around this with a direct fetch instead of going
+through `massive`/`backtest`. Know this before reaching for `get_history` to solve
+that shape of problem.
+
 ## Configuration
 
 Resolution order, widest to narrowest — later wins:
@@ -281,6 +288,8 @@ Recorded rather than hidden. Each is a rule above that nothing currently enforce
 | G6 | **mypy: 156 errors across 57 files.** | `mypy src/tradekit` | Ratchet, do not flip |
 | G7 | **`reports/html.py:323` imports a private helper** from `data.finviz` instead of the public `paths.trade_review_day_dir`. | `grep -n _trade_review_day_dir src/tradekit/reports/html.py` | Call the public function |
 | G8 | ~~**Account kind classification is broken; `main` is red.**~~ **CLOSED by #11 (`5ad22cc`).** `DEFAULT_ACCOUNT_KINDS = {}` fell through to `AccountKind.LIVE` for every account, so a SIM book reported as LIVE, and 3 `tests/test_reporting.py` tests failed on `main`. `default_account_kinds()` now resolves `$TRADEKIT_ACCOUNT_KINDS` then `[accounts]` in `~/.config/tradekit/accounts.toml`; an unmapped account renders `UNMAPPED (<id>)` instead of claiming a risk basis it was never told. | `pytest tests/test_reporting.py` → 41 passed | Done. Kept in the register because the *shape* recurs: a hardcoded value removed for a good reason, its replacement never written, and a permissive default that made the gap invisible rather than loud |
+| G9 | **`get_history` cannot serve an explicit historical date, and the same vendor now has four divergent credential schemes.** `reports/blotter.py` needs bars for one specific past (or current) date, not a relative `period` anchored to `now()`, so it cannot use the `DataProvider` layer at all — it fetches Massive S3 flat files directly with `boto3` (`MASSIVE_S3_ACCESS_KEY`/`MASSIVE_S3_SECRET_KEY`), and falls back to the Massive/Polygon REST aggs API (`POLYGON_API_KEY`) when the flat file for the current date hasn't been published yet (confirmed: it 403s/NoSuchKeys until the day after the session). That's on top of the already-separate `massive_api_key` (MCP path, `MassiveProvider`) and `backtest_access_key`/`backtest_secret_key` (`BacktestProvider`'s own S3 fields, not populated by the shared `.env` at all). Four names, one vendor. | `grep -n 'api_key\|access_key\|secret_key' src/tradekit/config.py` → `massive_api_key`, `backtest_access_key`, `backtest_secret_key`, `polygon_api_key` | Extend `get_history` with optional `from_date`/`to_date` so a date-specific caller can use the provider layer; consolidate the credential names (likely onto whatever the Massive dashboard actually issues as one pair) once a provider other than `blotter.py` needs same-day historical bars |
+| G10 | **3 tests fail on `main` as of `995ec5a`.** `TestCardsIngest::test_ingest_persists_a_retrievable_card`, `TestCardsIngest::test_ingest_without_narrative_still_persists_falcon_numbers`, `TestCardsTrend::test_trend_lists_both_days_date_sorted` — at least one failure's assertion output embeds today's wall-clock date ("Thu Oct 01... Overnight"), suggesting a date-relative fixture rather than a frozen one. Found incidentally while verifying the same-day blotter fallback (G9) didn't introduce a regression; not investigated further. | `pytest tests/test_cli_cards.py -q` on a clean `main` checkout → 3 failed, 26 passed | Pin the fixture's reference date (e.g. `freezegun` or an explicit `as_of`) so the test doesn't drift with the calendar |
 
 G1 and G4 are the same failure in two places: a claim published without a check
 that the claim is true. G3 and G2 are that failure waiting to happen.
