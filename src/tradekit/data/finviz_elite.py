@@ -177,7 +177,9 @@ class FinvizEliteProvider:
         "rsi": 59,
         "change_open": 60,
         "gap": 61,
-        "analyst_recom": 62,
+        # 62 is Analyst Recom, deliberately unmapped. Its absence is what made the
+        # off-by-one below plausible for as long as it lasted: the map jumps 61 -> 63
+        # and looks like a mistake. It is not. Do not "close the gap" by shifting.
         "avg_vol": 63,
         "rvol": 64,
         "price": 65,

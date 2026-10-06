@@ -31,12 +31,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Finviz Elite column codes for `rsi`, `change_open` and `gap`** (#13). Each was one higher
+  than the export's actual code, so `rsi` requested *Change from Open*, `change_open` requested
+  *Gap*, and `gap` requested *Analyst Recom*. The failure was silent: `get_quote()` reads results
+  by header name, the expected header was absent, and callers doing `latest.get("rsi", 0)` turned
+  missing data into a literal `0` — a reading that looks maximally oversold. `rsi` is in the
+  default `get_quotes()` column set, so this was on the common path. Codes 68–72 were suspected of
+  sharing the fault and are confirmed correct.
+
 - **Account kind is resolved from configuration, never guessed** (#11). `DEFAULT_ACCOUNT_KINDS`
   was empty and lookups fell through to `AccountKind.LIVE`, so every account — including a
   simulated book — resolved to LIVE. `default_account_kinds()` now reads
   `$TRADEKIT_ACCOUNT_KINDS` then `[accounts]` in `~/.config/tradekit/accounts.toml`, and an
   unmapped account renders `UNMAPPED (<id>)` rather than claiming a risk basis it has not been
   told. `AccountPnL.kind` is `Optional` so "unknown" is a real state
+- **Round-trip blotter renders empty charts for the current session's date.**
+  `reports/blotter.py` sourced minute bars only from the Massive S3 flat file, which
+  isn't published until the day after the session — a same-day blotter run got
+  "no bars in window" on every PNG with no visible error (the failure is logged at
+  exception-type granularity only, per CWE-209 discipline, so it read as silent).
+  `fetch_minute_bars` now falls back to the Massive/Polygon REST aggs API
+  (`POLYGON_API_KEY`, a new `polygon_api_key` setting — separate credential from
+  `massive_api_key`/`backtest_*`, see `docs/SPEC.md` gap G9) when the flat file
+  isn't available yet. Historical dates are unaffected — S3 remains the primary,
+  unchanged path.
 
 ## [0.3.0] — 2026-08-29
 
