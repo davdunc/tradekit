@@ -145,7 +145,7 @@ class RateLimiter:
             return list(self._mem)
         try:
             return [float(t) for t in json.loads(self.path.read_text())]
-        except OSError, ValueError, TypeError:
+        except (OSError, ValueError, TypeError):
             return []
 
     def _save(self, stamps: list[float]) -> None:
