@@ -330,7 +330,7 @@ class FinvizEliteProvider:
             if time.time() - csv_path.stat().st_mtime >= self._ttl_seconds(None):
                 return None
             meta = json.loads(meta_path.read_text())
-        except OSError, ValueError:
+        except (OSError, ValueError):
             return None
         if not set(cols) <= set(meta.get("cols", [])):
             return None
