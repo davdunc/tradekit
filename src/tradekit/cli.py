@@ -10,6 +10,7 @@ from rich.console import Console
 
 from tradekit.analysis.gex import DEFAULT_RATE as GEX_DEFAULT_RATE
 from tradekit.config import get_settings, now_et, shared_env_path
+from tradekit.data.finviz_http import FinvizThrottled
 from tradekit.paths import data_dir as tradekit_data_dir
 from tradekit.paths import debate_dir, group_snapshot
 
@@ -64,7 +65,22 @@ def _market_session() -> str:
         return "Overnight (market closed)"
 
 
-@click.group()
+class _FinvizAwareGroup(click.Group):
+    """Report a Finviz throttle as UNAVAILABLE (exit 3), never as an empty result."""
+
+    def invoke(self, ctx: click.Context):
+        try:
+            return super().invoke(ctx)
+        except FinvizThrottled as e:
+            console.print(
+                f"[red]Finviz throttled: {e}.[/red]\n"
+                "[red]Results are UNAVAILABLE, not empty. The rate budget is shared by every node; "
+                "retry after the window resets.[/red]"
+            )
+            ctx.exit(3)
+
+
+@click.group(cls=_FinvizAwareGroup)
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging.")
 def cli(verbose: bool):
     """tradekit — Pre-market screening and technical analysis toolkit."""

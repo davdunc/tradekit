@@ -18,6 +18,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# Seed-list liquidity floor (average daily shares). Below this a big % change is usually a
+# handful of off-hours shares, not a candidate.
+MIN_SEED_AVG_VOLUME = 100_000
+
+
+def finviz_gainers(min_price: float, limit: int | None = 50) -> pd.DataFrame:
+    """Top gainers, from the cached Elite universe when a token is set, else the public scraper.
+
+    The universe path is one shared export filtered locally, so ``scan`` and ``second-day`` in
+    the same TTL window cost a single Finviz request. A ``FinvizThrottled`` from either path
+    propagates — it means "unknown", and must not be reported as "no candidates".
+    """
+    from tradekit.data.finviz_elite import FinvizEliteConfig, FinvizEliteProvider, top_gainers
+
+    cfg = FinvizEliteConfig.from_env()
+    if cfg is not None:
+        return top_gainers(
+            FinvizEliteProvider(cfg).get_universe(),
+            min_price=min_price,
+            limit=limit,
+            min_avg_volume=MIN_SEED_AVG_VOLUME,
+        )
+    logger.info("No FINVIZ_AUTH_TOKEN — falling back to the public Finviz screener")
+    return FinvizProvider().get_top_gainers(min_price=min_price)
+
+
 def scan_premarket(
     settings: Settings | None = None,
     preset: str = "premarket_gap",
@@ -44,9 +70,8 @@ def scan_premarket(
     filter_config = presets.get(preset, {})
 
     # Step 1: Get initial candidates from Finviz
-    finviz = FinvizProvider()
     logger.info("Fetching top gainers from Finviz...")
-    finviz_df = finviz.get_top_gainers(min_price=filter_config.get("min_price", settings.screener.min_price))
+    finviz_df = finviz_gainers(min_price=filter_config.get("min_price", settings.screener.min_price))
 
     # Extract tickers from Finviz results
     tickers: list[str] = []
@@ -108,9 +133,8 @@ def scan_previous_movers(
     if provider is None:
         provider = YahooProvider()
 
-    finviz = FinvizProvider()
     logger.info("Fetching top gainers for 2nd-day scan...")
-    gainers_df = finviz.get_top_gainers(min_price=3.0)
+    gainers_df = finviz_gainers(min_price=3.0)
 
     tickers: list[str] = []
     if not gainers_df.empty:

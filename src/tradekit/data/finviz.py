@@ -11,6 +11,7 @@ import requests
 from bs4 import BeautifulSoup
 from finvizfinance.screener.overview import Overview
 
+from tradekit.data.finviz_http import FinvizThrottled, finviz_get, install_on_vendored_scraper
 from tradekit.paths import state_dir, trade_review_day_dir
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,14 @@ def _nearest_volume_over(volume: int) -> str:
 
 
 class FinvizProvider:
-    """Fetch screener data from Finviz."""
+    """Fetch screener data from the public Finviz site (fallback when no Elite token is set).
+
+    The vendored scraper's HTTP session is swapped for the shared rate-limited, backing-off
+    session, so it draws on the same budget as every other Finviz call in the process.
+    """
+
+    def __init__(self) -> None:
+        install_on_vendored_scraper()
 
     def screen(
         self,
@@ -109,6 +117,8 @@ class FinvizProvider:
             if df is None or df.empty:
                 return pd.DataFrame()
             return df
+        except FinvizThrottled:
+            raise  # throttled is "unknown", not "no results"
         except Exception as e:
             logger.warning("Finviz screener failed: %s", e)
             return pd.DataFrame()
@@ -144,8 +154,7 @@ class FinvizProvider:
         headers = {"User-Agent": _BROWSER_UA}
 
         try:
-            resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
-            resp.raise_for_status()
+            resp = finviz_get(url, headers=headers, timeout=15, allow_redirects=True)
         except requests.RequestException as e:
             logger.warning("Finviz news fetch failed: %s", e)
             return []
