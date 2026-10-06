@@ -7,7 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-06
+
 ### Added
+
+- **Per-dimension market regime** (#22, ADR 0002). `tradekit regime` describes direction, structure,
+  volatility, participation, liquidity, events and data quality independently, each with evidence and
+  an explicit `unknown`. A separate policy step marks playbooks `eligible` / `conditional` / `blocked`
+  with reasons, and an M1–M6 adapter maps the state onto model-book cases. Every assessment carries a
+  read-at-a-glance `glance` (headline, chips, Trade / Careful / Off). Thresholds come only from a
+  versioned config (`~/.config/tradekit/regime.yaml`). A missing config is an error, and
+  `config/regime.example.yaml` ships proposed, experimental values. Inputs are three bulk Massive
+  requests. Assessments are deterministic, ignore bars on or after `as_of`, and are stored without
+  being rewritten. `--json` is the LifeOS contract (`docs/output-schema.md`). Never a trade signal.
+- **Massive REST client** (`data/massive_rest.py`): daily bars and grouped daily aggregates, capped at
+  10 requests/second. A 403 is recorded and not retried. Daily dates are taken in America/New_York.
+- **Finviz rate limit and backoff** (#21). Every Finviz request goes through `data/finviz_http.py`:
+  a file-locked limiter (10 requests / 5 s across local processes) and 403/429/5xx retry with capped,
+  jittered exponential backoff that honours `Retry-After`. Exhausted retries raise `FinvizThrottled`,
+  which the CLI reports as "UNAVAILABLE, not empty" (exit 3).
+- **Finviz universe export** (#21). `FinvizEliteProvider.get_universe()` fetches the whole price-over-$1
+  universe in one request and caches it for `finviz_cache_ttl_minutes`. Top gainers, losers, unusual
+  volume and most active are local filters over it, and `get_quotes()` answers from the cache.
+- **API error log** (#21). Paid-API 403s append redacted, path-only events to
+  `~/.local/state/api-errors/events.jsonl` for LifeOS's `api_errors.py report`, which files them as
+  `bug` + `api-403` issues.
 
 - **Discipline Workshop graduation call (W/L)** — `DisciplineScore.graduation` /
   `DisciplineResult.graduation` compute a binary win/loss independent of the 0-10
@@ -29,7 +53,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expiry is measured to the 16:00 ET close and floored at ten minutes, so gamma stays
   finite in the closing minutes and expired contracts are dropped rather than floored (#14)
 
+### Changed
+
+- **`tradekit regime` output** (#22). The default is the per-dimension assessment. The old SMA/RSI
+  table is `tradekit regime --legacy`; the HTML report's regime data is unchanged.
+- **The CLI date banner goes to stderr**, so `--json` stdout is a single parseable document on every
+  command.
+- **`tradekit scan` and `second-day` use the Finviz Elite universe** when `FINVIZ_AUTH_TOKEN` is set,
+  instead of the public screener scraper whose concurrent calls drew 403s (#21). Seed gainers require
+  at least 100K average daily volume.
+
 ### Fixed
+
+- **Finviz `%` columns were never converted on pandas 3** (#21): text columns are dtype `str`, not
+  `object`, so `_coerce_pct` skipped them.
+- **`test_rsi_is_in_the_default_quote_columns`** checks behaviour instead of source text (#22).
 
 - **Finviz Elite column codes for `rsi`, `change_open` and `gap`** (#13). Each was one higher
   than the export's actual code, so `rsi` requested *Change from Open*, `change_open` requested
@@ -133,6 +171,8 @@ standalone package designed to integrate with Daniel Miessler's
 
 [pai]: https://github.com/danielmiessler/LifeOS
 [smb]: https://www.smbtraining.com/
-[Unreleased]: https://github.com/davdunc/tradekit/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/davdunc/tradekit/compare/0.4.0...HEAD
+[0.4.0]: https://github.com/davdunc/tradekit/releases/tag/0.4.0
+[0.3.0]: https://github.com/davdunc/tradekit/compare/0.2.0...24eb38b
 [0.2.0]: https://github.com/davdunc/tradekit/releases/tag/0.2.0
 [0.1.0]: https://github.com/davdunc/tradekit/releases/tag/v0.1.0
