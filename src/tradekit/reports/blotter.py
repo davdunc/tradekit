@@ -1,18 +1,27 @@
 """Round-trip blotter — one candlestick PNG per closed round-trip.
 
 Pulls round-trips from the ``falcon-trades`` DynamoDB table and 1-minute bars
-(all sessions incl. premarket) from Massive.com flat files, then renders a
-static PNG per round-trip with entry/exit markers. Designed to be embedded
-inline in the Notion end-of-day review (which cannot render interactive HTML).
+(all sessions incl. premarket) from Massive.com, then renders a static PNG per
+round-trip with entry/exit markers. Designed to be embedded inline in the
+Notion end-of-day review (which cannot render interactive HTML).
 
 Data sources
 ------------
 - Round-trips: DynamoDB ``falcon-trades`` (``PK=TRADE#YYYY-MM-DD``). Trade
   ``entry_time`` / ``exit_time`` are naive **ET** strings.
-- Bars: Massive minute flat file
-  ``us_stocks_sip/minute_aggs_v1/YYYY/MM/YYYY-MM-DD.csv.gz`` — CSV columns
-  ``ticker,volume,open,close,high,low,window_start(ns UTC),transactions``.
-  Includes premarket, RTH, and postmarket, so no TradingView fallback needed.
+- Bars, two-tier:
+  1. **Primary — Massive minute flat file**
+     ``us_stocks_sip/minute_aggs_v1/YYYY/MM/YYYY-MM-DD.csv.gz`` — CSV columns
+     ``ticker,volume,open,close,high,low,window_start(ns UTC),transactions``.
+     Includes premarket, RTH, and postmarket. **Not published until the day
+     after the session** — a same-day blotter run will always miss this file.
+  2. **Fallback — Massive/Polygon REST aggs API**
+     (``/v2/aggs/ticker/{ticker}/range/1/minute/{date}/{date}``, same vendor,
+     separate credential: ``POLYGON_API_KEY``). Has same-day data immediately,
+     including premarket, with a "DELAYED" status rather than a publish lag.
+     Used only when the flat file isn't available yet — see
+     ``_fetch_minute_bars_rest`` and docs/SPEC.md Known Gaps for why this
+     isn't routed through the ``DataProvider`` contract instead.
 """
 
 from __future__ import annotations
@@ -28,6 +37,7 @@ from zoneinfo import ZoneInfo
 
 import boto3
 import matplotlib
+import requests
 
 matplotlib.use("Agg")  # headless
 import matplotlib.dates as mdates  # noqa: E402
@@ -181,10 +191,11 @@ def fetch_minute_bars(symbols: set[str], date: str, *, settings=None):
         body = s3.get_object(Bucket=d.backtest_bucket, Key=key)["Body"].read()
     except Exception as exc:
         # Log only the exception TYPE — never the message/traceback, which can
-        # surface AWS credential/config details (CWE-209). Degrade gracefully so
-        # the blotter still renders the trades that do have bars.
+        # surface AWS credential/config details (CWE-209). The flat file for the
+        # current date 403s until it's published the next day, so this is the
+        # expected path for a same-day blotter run, not just an error case.
         logger.error("Failed to fetch minute bars for %s: %s", date, type(exc).__name__)
-        return {s: [] for s in symbols}
+        return _fetch_minute_bars_rest(symbols, date, settings=settings)
     out: dict[str, list] = {s: [] for s in symbols}
     with gzip.open(io.BytesIO(body), "rt") as fh:
         for line in fh:
@@ -198,6 +209,53 @@ def fetch_minute_bars(symbols: set[str], date: str, *, settings=None):
             out[tk].append((t, o, h, low, c))
     for s in out:
         out[s].sort(key=lambda b: b[0])
+    return out
+
+
+def _fetch_minute_bars_rest(symbols: set[str], date: str, *, settings=None):
+    """Same-day fallback: Massive/Polygon REST aggs API, one request per symbol.
+
+    Only reached when the S3 flat file isn't available (typically: it hasn't been
+    published yet for the current date — see ``fetch_minute_bars``). Same return
+    shape as the flat-file path so callers never need to know which source served
+    a given symbol.
+
+    Not routed through ``data.massive.MassiveProvider`` — its ``get_history()``
+    only accepts a relative ``period`` anchored to ``datetime.now()``, with no way
+    to request a specific historical date, so it cannot serve this call. See
+    docs/SPEC.md Known Gaps.
+    """
+    settings = settings or get_settings()
+    api_key = settings.data.polygon_api_key or _env_credential("POLYGON_API_KEY")
+    out: dict[str, list] = {s: [] for s in symbols}
+    if not api_key:
+        logger.error("No POLYGON_API_KEY available for same-day fallback fetch")
+        return out
+    for symbol in symbols:
+        url = (
+            f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/minute/"
+            f"{date}/{date}"
+        )
+        try:
+            resp = requests.get(
+                url,
+                params={"adjusted": "true", "sort": "asc", "limit": 50000, "apiKey": api_key},
+                timeout=20,
+            )
+            resp.raise_for_status()
+            results = resp.json().get("results", [])
+        except Exception as exc:
+            # Same CWE-209 discipline as the S3 path: type only, never the
+            # message — a REST error can echo the request URL, which carries
+            # the API key as a query parameter.
+            logger.error("REST fallback failed for %s on %s: %s", symbol, date, type(exc).__name__)
+            continue
+        bars = []
+        for b in results:
+            t = datetime.fromtimestamp(b["t"] / 1000, tz=UTC).astimezone(ET)
+            bars.append((t, b["o"], b["h"], b["l"], b["c"]))
+        bars.sort(key=lambda bar: bar[0])
+        out[symbol] = bars
     return out
 
 
