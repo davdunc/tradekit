@@ -70,7 +70,7 @@ class MassiveREST:
         try:
             r = requests.get(url, params={**(params or {}), "apiKey": self.api_key}, timeout=self.timeout)
         except requests.RequestException as e:
-            raise MassiveError(type(e).__name__, url) from e
+            raise MassiveError(type(e).__name__, redact_key(url)) from e
         if r.status_code == 403:
             api_errors.record("massive", r.url, 403, detail=r.reason or "", app=self.app)
         if r.status_code != 200:
