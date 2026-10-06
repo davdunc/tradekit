@@ -106,7 +106,7 @@ M5 and M6 can coexist with M1–M4. Each candidate lists the rule that produced 
 ## Output contract
 
 `tradekit regime --json` emits one JSON document. See [output-schema.md §Regime assessment](../output-schema.md).
-Assessments are stored at `$XDG_DATA_HOME/tradekit/regime/<as_of>/<assessment_id>.json` and never rewritten.
+Assessments are stored at `<data_dir>/regime/<as_of>/<assessment_id>.json` (`tradekit.paths.data_dir()`: `$XDG_DATA_HOME/tradekit`, or the legacy `~/market_data` where it exists) and never rewritten.
 
 ## Non-goals and safety
 

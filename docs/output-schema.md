@@ -172,7 +172,7 @@ Per-dimension market regime. This is the contract LifeOS reads: the MorningGameP
 Intent and rules: [intents/market-regime.md](intents/market-regime.md).
 
 **Written by:** `tradekit regime` (stdout with `--json`; stored unless `--no-save`)
-**Path:** `$XDG_DATA_HOME/tradekit/regime/<as_of>/<assessment_id>.json`. Records are never rewritten;
+**Path:** `<data_dir>/regime/<as_of>/<assessment_id>.json` (`$XDG_DATA_HOME/tradekit`, or the legacy `~/market_data` where it exists). Records are never rewritten;
 new information produces a new `assessment_id`.
 
 ```json

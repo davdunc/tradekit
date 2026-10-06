@@ -482,7 +482,7 @@ def _regime_dimensional(as_json: bool, as_of: str | None, config_path: str | Non
     console.print("  [yellow]⚠ Careful:[/yellow] " + (" · ".join(g["careful"]) or "none"))
     console.print("  [red]❌ Off:[/red] " + (" · ".join(g["off"]) or "none"))
     if g["provisional"]:
-        console.print("  [dim]Provisional: thresholds are experimental (not yet approved).[/dim]")
+        console.print("  [dim]Provisional: thresholds are experimental (approved for use, not yet validated against outcomes).[/dim]")
     console.print()
 
     st = a["state"]
