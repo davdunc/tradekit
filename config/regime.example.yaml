@@ -1,0 +1,75 @@
+# Market regime classifier configuration — EXAMPLE, PROPOSED VALUES ONLY.
+#
+# Copy to ~/.config/tradekit/regime.yaml (or point $TRADEKIT_REGIME_CONFIG / --config at it) only after
+# reviewing every threshold. Without an operational config, `tradekit regime` refuses to classify
+# (RegimeConfigError). A plausible-looking default would be a guess presented as a measurement.
+#
+# Every value below is a starting proposal (status: experimental). None is calibrated, and none is an SMB
+# Capital threshold; SMB publishes no regime taxonomy. Change `status` to `validated` only after the
+# evaluation in docs/intents/market-regime.md (classification behaviour + trading usefulness) supports it.
+# The status is copied into every assessment, so a reader can always tell.
+
+version: "2026-10-06.1-proposed"
+status: experimental
+
+benchmarks:
+  direction: SPY          # sets direction, structure and volatility
+  confirm: QQQ            # reported alongside the direction benchmark; never overrides it
+history_sessions: 300     # daily bars requested per benchmark (must cover volatility.lookback + hv_window)
+
+direction:                # close vs SMA and SMA slope, both in ATR units
+  sma_window: 20
+  slope_lag: 5
+  atr_window: 14
+  up:   {close_vs_sma_min: 0.0, slope_min: 0.10}
+  down: {close_vs_sma_max: 0.0, slope_max: -0.10}
+  # otherwise: neutral
+
+structure:                # Kaufman efficiency ratio of closes
+  er_window: 10
+  trend_min: 0.40         # ER >= trend_min -> trend
+  range_max: 0.20         # ER <= range_max -> range; between -> transition
+
+volatility:               # HV20 percentile within its own trailing distribution
+  hv_window: 20
+  lookback: 252
+  low_pct: 20             # < low_pct -> low
+  high_pct: 80            # >= high_pct -> high
+  extreme_pct: 95         # >= extreme_pct -> extreme
+
+participation:            # agreement with the benchmark's last-session move
+  # Excludes NASDAQ 5th-letter warrants/rights/units (ABCDW, ABCDR, ABCDU), lowercase-suffixed issues
+  # (Massive writes rights as e.g. BCATr) and dotted share classes. 4-letter names like SNOW/UBER stay in.
+  universe: {min_price: 5.0, min_volume: 500000, exclude_suffix_regex: "(?:^[A-Z]{4}[WRU]$|[a-z]|\\.)"}
+  min_universe: 500       # fewer names than this -> participation unknown
+  broad:  {name_agree_min: 0.60, sector_agree_min: 0.64}
+  narrow: {name_agree_max: 0.45, sector_agree_max: 0.45}   # either side below -> narrow; else mixed
+  sectors: [XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY]
+
+transitions:
+  confirm_sessions: 2     # consecutive sessions a changed (direction, structure) must persist
+
+data_quality:
+  max_bar_age_days: 4     # calendar days between the last bar and as_of before inputs count as stale
+
+# Playbook policy — separate from classification. Example rules only; set them from your own playbook.
+#   requires:     dimension values that must hold, otherwise BLOCKED
+#   prefers:      values that should hold, otherwise CONDITIONAL
+#   blocked_when: values that block outright
+playbooks:
+  fashionably_late_long:
+    requires: {direction: [up, neutral]}
+    prefers: {structure: [trend, transition]}
+    blocked_when: {volatility: [extreme]}
+  fashionably_late_short:
+    requires: {direction: [down, neutral]}
+    prefers: {structure: [trend, transition]}
+    blocked_when: {volatility: [extreme]}
+  range_edge_fade:
+    prefers: {structure: [range]}
+    blocked_when: {structure: [trend], volatility: [extreme]}
+  day1_news_orb:
+    prefers: {volatility: [low, normal, high]}
+  base_hit_soxl:
+    prefers: {participation: [broad, mixed]}
+    blocked_when: {volatility: [extreme]}

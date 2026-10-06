@@ -162,3 +162,51 @@ JSON for data.
 | Group rotation        | `$XDG_DATA_HOME/tradekit/groups_<YYYY-MM-DD>.json`            | pretty JSON object |
 | Debate transcript     | `$XDG_DATA_HOME/tradekit/debates/<TICKER>_<TS>.json`          | pretty JSON object |
 | Weekly review         | `~/.claude/MEMORY/WORK/<YYYYMMDD>_weekly-review/REVIEW.md`    | markdown           |
+
+---
+
+## Regime assessment
+
+Per-dimension market regime. This is the contract LifeOS reads: the MorningGamePlan workflow runs
+`tradekit regime --json` and renders its regime table and Notion `Regime` field from this document.
+Intent and rules: [intents/market-regime.md](intents/market-regime.md).
+
+**Written by:** `tradekit regime` (stdout with `--json`; stored unless `--no-save`)
+**Path:** `$XDG_DATA_HOME/tradekit/regime/<as_of>/<assessment_id>.json`. Records are never rewritten;
+new information produces a new `assessment_id`.
+
+```json
+{
+  "schema_version": "1.0",
+  "classifier_version": "1.0.0",
+  "configuration_version": "2026-10-06.1-proposed",
+  "configuration_status": "experimental | validated",
+  "assessment_id": "16-hex hash of inputs + state + transition",
+  "as_of": "YYYY-MM-DD",
+  "scope": {"kind": "market", "benchmark": "SPY", "confirm": "QQQ", "timeframe": "daily_pre_session"},
+  "state": {
+    "direction": "up | down | neutral | unknown",
+    "structure": "trend | range | transition | unknown",
+    "volatility": "low | normal | high | extreme | unknown",
+    "participation": "broad | narrow | mixed | unknown",
+    "liquidity": "normal | impaired | unknown",
+    "event_flags": [{"type": "fomc", "label": "FOMC minutes 13:00 CT"}],
+    "data_quality": "valid | degraded | unusable"
+  },
+  "evidence": {"direction": {...}, "structure": {...}, "volatility": {...}, "participation": {...},
+               "confirm_QQQ": {"direction": "...", ...}},
+  "conflicts": ["QQQ direction=neutral vs SPY direction=up"],
+  "data_quality_reasons": ["participation_unknown", "liquidity_unknown(no_quote_data)"],
+  "transition": {"previous_confirmed": ["up", "trend"], "candidate": ["up", "range"],
+                 "candidate_sessions": 1, "confirmed": ["up", "trend"], "status": "stable | pending | confirmed"},
+  "model_book": [{"id": "M3", "name": "range", "rule": "structure=range"},
+                 {"id": "M5", "name": "divergence", "rule": "...", "overlay": true}],
+  "playbooks": [{"playbook": "range_edge_fade", "decision": "eligible | conditional | blocked",
+                 "reasons": ["all_conditions_met"]}],
+  "provenance": {"source": "massive", "requests": 3, "grouped_session": "YYYY-MM-DD", "errors": [], "config_path": "..."},
+  "note": "Regime describes conditions and gates playbook eligibility. It is never a trade signal."
+}
+```
+
+Consumers must read `configuration_status`. While it is `experimental` the thresholds are uncalibrated
+proposals and the read is provisional.
