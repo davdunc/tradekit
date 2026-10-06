@@ -348,3 +348,40 @@ def test_min_avg_volume_uses_thousands():
     g = top_gainers(u, min_price=1.0, min_avg_volume=100_000)
     assert list(g["Ticker"]) == ["AAA", "DDD"]  # BBB (50K avg) dropped
     assert "_avg_vol_shares" not in g.columns
+
+
+# ----- api-403 event log -----
+
+
+def test_403_recorded_redacted(fake_http, monkeypatch, tmp_path):
+    import json
+
+    log = tmp_path / "events.jsonl"
+    monkeypatch.setenv("API_ERROR_LOG", str(log))
+    s, _ = _session(max_attempts=2)
+    fake_http.extend([_resp(403), _resp(200, "Ticker\n")])
+    s.get("https://elite.finviz.com/export.ashx?v=152&t=AAPL&auth=SECRET123", expect_csv=True)
+    events = [json.loads(line) for line in log.read_text().splitlines()]
+    assert len(events) == 1
+    ev = events[0]
+    assert (ev["app"], ev["provider"], ev["status"], ev["path"]) == ("tradekit", "finviz", 403, "/export.ashx")
+    assert ev["detail"] == "attempt 1/2"
+    assert "SECRET123" not in log.read_text() and "AAPL" not in log.read_text()
+
+
+def test_429_not_recorded(fake_http, monkeypatch, tmp_path):
+    log = tmp_path / "events.jsonl"
+    monkeypatch.setenv("API_ERROR_LOG", str(log))
+    s, _ = _session(max_attempts=2)
+    fake_http.extend([_resp(429), _resp(200, "Ticker\n")])
+    s.get(URL, expect_csv=True)
+    assert not log.exists()
+
+
+def test_normalize_paths():
+    from tradekit.data.api_errors import normalize
+
+    assert normalize("https://api.polygon.io/v2/aggs/ticker/SPY/range/1/day/2026-10-01/2026-10-05?apiKey=x") == (
+        "api.polygon.io",
+        "/v2/aggs/ticker/{ticker}/range/1/day/{date}/{date}",
+    )

@@ -35,6 +35,8 @@ from pathlib import Path
 
 import requests
 
+from tradekit.data import api_errors
+
 logger = logging.getLogger(__name__)
 
 RETRYABLE_STATUS = frozenset({403, 429, 500, 502, 503, 504})
@@ -198,6 +200,8 @@ class FinvizSession(requests.Session):
                 if resp.status_code in RETRYABLE_STATUS:
                     last = f"HTTP {resp.status_code}"
                     delay = _retry_after(resp)
+                    if resp.status_code == 403:
+                        api_errors.record("finviz", url, 403, detail=f"attempt {attempt}/{self.policy.max_attempts}")
                 elif expect_csv and resp.ok and looks_like_html(resp):
                     last = "HTML instead of CSV"
                 else:
