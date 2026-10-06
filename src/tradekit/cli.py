@@ -92,7 +92,10 @@ def cli(verbose: bool):
         stream=sys.stderr,
     )
     et = now_et()
-    console.print(f"[dim]{et.strftime('%a %b %d, %I:%M %p')} ET — {_market_session()}[/dim]")
+    # Banner on stderr so `--json` stdout stays a single parseable document.
+    Console(stderr=True, force_terminal=True).print(
+        f"[dim]{et.strftime('%a %b %d, %I:%M %p')} ET — {_market_session()}[/dim]"
+    )
 
 
 @cli.command()
@@ -393,8 +396,124 @@ def watchlist(name: str, source: str | None):
 
 @cli.command()
 @source_option
-def regime(source: str | None):
-    """Show market regime summary: SPY/QQQ/VIX + sector breadth."""
+@click.option("--json", "as_json", is_flag=True, help="Emit the assessment as JSON (the LifeOS contract).")
+@click.option(
+    "--as-of", "as_of", default=None, help="Session date YYYY-MM-DD (default: today, ET). Replays use bars before it."
+)
+@click.option("--config", "config_path", default=None, help="Regime config (default ~/.config/tradekit/regime.yaml).")
+@click.option(
+    "--event", "events", multiple=True, help="Event flag TYPE:LABEL (repeatable), e.g. fomc:'FOMC minutes 13:00 CT'."
+)
+@click.option("--no-save", is_flag=True, help="Do not store the assessment.")
+@click.option("--legacy", is_flag=True, help="Old single-label SPY/QQQ/VIX table.")
+def regime(
+    source: str | None,
+    as_json: bool,
+    as_of: str | None,
+    config_path: str | None,
+    events: tuple[str, ...],
+    no_save: bool,
+    legacy: bool,
+):
+    """Market regime per dimension: direction, structure, volatility, participation, liquidity, events.
+
+    Pre-session, daily timeframe, Massive data (three requests). Describes conditions and gates playbook
+    eligibility; never a trade signal. See docs/intents/market-regime.md.
+    """
+    if not legacy:
+        _regime_dimensional(as_json, as_of, config_path, events, no_save)
+        return
+    _regime_legacy(source)
+
+
+def _regime_dimensional(as_json: bool, as_of: str | None, config_path: str | None, events, no_save: bool) -> None:
+    import datetime as dt
+    import json
+
+    from tradekit.regime import RegimeConfigError, assess, load_config
+    from tradekit.regime import store as regime_store
+    from tradekit.regime.sources import fetch_inputs
+
+    try:
+        cfg = load_config(config_path)
+    except RegimeConfigError as e:
+        Console(stderr=True).print(f"[red]{e}[/red]")
+        raise SystemExit(2) from e
+    day = dt.date.fromisoformat(as_of) if as_of else now_et().date()
+    flags = []
+    for ev in events:
+        typ, _, label = ev.partition(":")
+        flags.append({"type": typ.strip(), "label": label.strip() or typ.strip()})
+    from tradekit.data.massive_rest import MassiveError
+
+    try:
+        inputs = fetch_inputs(day, cfg)
+    except MassiveError as e:
+        Console(stderr=True).print(f"[red]Regime inputs unavailable: {e}[/red]")
+        raise SystemExit(3) from e
+    a = assess(
+        day,
+        cfg,
+        inputs.get("direction"),
+        inputs.get("confirm"),
+        inputs.get("grouped"),
+        inputs.get("grouped_date"),
+        events=flags,
+        history=regime_store.history(day),
+        provenance={
+            "source": inputs["source"],
+            "requests": inputs["requests"],
+            "grouped_session": str(inputs.get("grouped_date")),
+            "errors": inputs["errors"],
+            "config_path": cfg["_path"],
+        },
+    )
+    if not no_save:
+        a["stored_at"] = str(regime_store.save(a))
+    if as_json:
+        click.echo(json.dumps(a, indent=2, default=str))
+        return
+    from rich.table import Table
+
+    g = a["glance"]
+    console.print(f"\n[bold]{g['headline']}[/bold]")
+    console.print("  " + " · ".join(g["chips"]))
+    console.print("  [green]✅ Trade:[/green] " + (" · ".join(g["trade"]) or "none"))
+    console.print("  [yellow]⚠ Careful:[/yellow] " + (" · ".join(g["careful"]) or "none"))
+    console.print("  [red]❌ Off:[/red] " + (" · ".join(g["off"]) or "none"))
+    if g["provisional"]:
+        console.print(
+            "  [dim]Provisional: thresholds are experimental "
+            "(approved for use, not yet validated against outcomes).[/dim]"
+        )
+    console.print()
+
+    st = a["state"]
+    t = Table(title=f"Evidence — {a['as_of']} (config {a['configuration_version']}, {a['configuration_status']})")
+    t.add_column("Dimension", style="bold cyan")
+    t.add_column("Read")
+    t.add_column("Evidence")
+    for dim in ("direction", "structure", "volatility", "participation"):
+        evid = {k: v for k, v in a["evidence"][dim].items() if v is not None}
+        t.add_row(dim, st[dim].upper(), ", ".join(f"{k}={v}" for k, v in evid.items()))
+    t.add_row("liquidity", st["liquidity"].upper(), "no quote data in v1")
+    t.add_row("events", ", ".join(e["label"] for e in st["event_flags"]) or "none supplied", "")
+    t.add_row("data_quality", st["data_quality"].upper(), "; ".join(a["data_quality_reasons"]))
+    console.print(t)
+    tr = a["transition"]
+    console.print(f"Transition: {tr['status']} · candidate {tr['candidate']} · confirmed {tr['confirmed']}")
+    if a["conflicts"]:
+        console.print(f"[yellow]Conflicts: {'; '.join(a['conflicts'])}[/yellow]")
+    console.print("Model book: " + (", ".join(f"{m['id']} {m['name']}" for m in a["model_book"]) or "none"))
+    for pb in a["playbooks"]:
+        console.print(f"  {pb['playbook']}: {pb['decision']} ({'; '.join(pb['reasons'])})")
+    if a["configuration_status"] != "validated":
+        console.print("[yellow]Thresholds are EXPERIMENTAL (not calibrated); treat the read as provisional.[/yellow]")
+    console.print(f"[dim]{a['note']} · Massive requests: {a['provenance']['requests']}[/dim]")
+
+
+def _regime_legacy(source: str | None) -> None:
+    """Old single-label summary: SPY/QQQ/VIX + sector breadth."""
     from rich.table import Table
 
     from tradekit.analysis.indicators import compute_all_indicators
@@ -2768,7 +2887,13 @@ def cards_publish(
     (same pattern as 'publish-review') rather than holding API credentials in
     tradekit itself.
     """
-    from tradekit.reporting import DailyReportCard, FileReportStore, RiskConfig, render_daily_card, render_public_summary
+    from tradekit.reporting import (
+        DailyReportCard,
+        FileReportStore,
+        RiskConfig,
+        render_daily_card,
+        render_public_summary,
+    )
     from tradekit.reporting.schema import AccountKind
 
     date = date or now_et().strftime("%Y-%m-%d")
