@@ -117,10 +117,11 @@ def test_the_three_codes_from_issue_13():
 
 def test_rsi_is_in_the_default_quote_columns():
     """`rsi` was on the common path, which is why the bug mattered rather than lurked."""
-    import inspect
-
-    source = inspect.getsource(FinvizEliteProvider.get_quotes)
-    assert '"rsi"' in source
+    # Checked by behaviour, not source text: #21 moved the default list to DEFAULT_QUOTE_COLS,
+    # which broke a source-inspection version of this test while RSI stayed a default.
+    assert "rsi" in FinvizEliteProvider.DEFAULT_QUOTE_COLS
+    codes = [FinvizEliteProvider.SCREENER_COLS[c] for c in FinvizEliteProvider.DEFAULT_QUOTE_COLS]
+    assert 59 in codes  # the RSI code the default request actually sends
 
 
 def test_analyst_recom_gap_is_intentional():
