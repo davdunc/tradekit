@@ -193,6 +193,14 @@ new information produces a new `assessment_id`.
     "event_flags": [{"type": "fomc", "label": "FOMC minutes 13:00 CT"}],
     "data_quality": "valid | degraded | unusable"
   },
+  "glance": {
+    "headline": "🔁 RANGE DAY — fade the edges, trade catalysts",
+    "chips": ["→ Neutral", "🔁 Range", "● Normal vol", "◐ Mixed", "⚠ QQQ up vs SPY neutral"],
+    "trade": ["range edge fade", "day1 news ORB"],
+    "careful": ["fashionably late long (structure is range)"],
+    "off": [],
+    "provisional": true
+  },
   "evidence": {"direction": {...}, "structure": {...}, "volatility": {...}, "participation": {...},
                "confirm_QQQ": {"direction": "...", ...}},
   "conflicts": ["QQQ direction=neutral vs SPY direction=up"],
@@ -207,6 +215,10 @@ new information produces a new `assessment_id`.
   "note": "Regime describes conditions and gates playbook eligibility. It is never a trade signal."
 }
 ```
+
+**`glance` is what a human reads first.** Renderers (the game plan, Notion) lead with `headline`,
+then `chips`, then Trade / Careful / Off, and put `evidence` underneath. `glance` is derived only from
+the assessment's own fields, so it never says more than the evidence does.
 
 Consumers must read `configuration_status`. While it is `experimental` the thresholds are uncalibrated
 proposals and the read is provisional.

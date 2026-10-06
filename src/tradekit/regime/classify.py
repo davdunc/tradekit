@@ -181,6 +181,72 @@ def playbook_policy(state: dict, cfg: dict) -> list[dict]:
     return out
 
 
+_HEADLINES = {
+    ("range", None): ("🔁", "RANGE DAY", "fade the edges, trade catalysts"),
+    ("trend", "up"): ("📈", "TREND UP", "trade with the trend, buy pullbacks"),
+    ("trend", "down"): ("📉", "TREND DOWN", "trade with the trend, sell rallies"),
+    ("trend", None): ("↔", "TREND, NO SIDE", "wait for a direction"),
+    ("transition", None): ("🔀", "TRANSITION", "let it declare, size down"),
+    ("unknown", None): ("❔", "UNCLEAR", "inputs missing, index read unavailable"),
+}
+_DIR = {"up": "↑ Up", "down": "↓ Down", "neutral": "→ Neutral", "unknown": "? Direction"}
+_STRUCT = {"trend": "⇗ Trend", "range": "🔁 Range", "transition": "🔀 Transition", "unknown": "? Structure"}
+_VOL = {
+    "low": "○ Low vol",
+    "normal": "● Normal vol",
+    "high": "▲ High vol",
+    "extreme": "⚡ Extreme vol",
+    "unknown": "? Vol",
+}
+_BREADTH = {"broad": "● Broad", "mixed": "◐ Mixed", "narrow": "◔ Narrow", "unknown": "? Breadth"}
+
+
+def _pb_name(name: str) -> str:
+    return name.replace("_", " ").replace("orb", "ORB").replace("soxl", "SOXL")
+
+
+def _short_reason(reason: str) -> str:
+    """'prefers:structure in [...], got range' -> 'structure is range'."""
+    if "got " in reason and ":" in reason:
+        dim = reason.split(":", 1)[1].split(" ", 1)[0]
+        return f"{dim} is {reason.rsplit('got ', 1)[1]}"
+    if reason.startswith("blocked_when:"):
+        dim, val = reason.split(":", 1)[1].split("=", 1)
+        return f"{dim} is {val}"
+    return reason
+
+
+def glance(state: dict, conflicts: list[str], playbooks: list[dict], config_status: str) -> dict:
+    """The read-at-a-glance summary: one headline, short chips, and what to trade, watch or skip.
+
+    Derived only from the assessment's own fields, so it can never say more than the evidence does.
+    """
+    s, d = state["structure"], state["direction"]
+    key = (s, d) if (s, d) in _HEADLINES else (s, None)
+    icon, title, posture = _HEADLINES.get(key, _HEADLINES[("unknown", None)])
+    if state["volatility"] == "extreme":
+        posture += "; extreme volatility: smallest size"
+    chips = [_DIR[d], _STRUCT[s], _VOL[state["volatility"]], _BREADTH[state["participation"]]]
+    if conflicts:
+        chips.append("⚠ " + "; ".join(c.replace(" direction=", " ") for c in conflicts))
+    by = {"eligible": [], "conditional": [], "blocked": []}
+    for pb in playbooks:
+        by[pb["decision"]].append(pb)
+    return {
+        "headline": f"{icon} {title} — {posture}",
+        "chips": chips,
+        "trade": [_pb_name(p["playbook"]) for p in by["eligible"]],
+        "careful": [
+            f"{_pb_name(p['playbook'])} ({', '.join(_short_reason(r) for r in p['reasons'])})"
+            for p in by["conditional"]
+        ],
+        "off": [
+            f"{_pb_name(p['playbook'])} ({', '.join(_short_reason(r) for r in p['reasons'])})" for p in by["blocked"]
+        ],
+        "provisional": config_status != "validated",
+    }
+
+
 def assess(
     as_of: dt.date,
     cfg: dict,
@@ -237,6 +303,7 @@ def assess(
         conflicts.append(f"{confirm_name} direction={confirm_dir} vs {bench_name} direction={direction}")
 
     trans = transition(state, history or [], cfg["transitions"]["confirm_sessions"])
+    policy = playbook_policy(state, cfg)
 
     inputs_fingerprint = {
         "as_of": str(as_of),
@@ -272,8 +339,9 @@ def assess(
         "conflicts": conflicts,
         "data_quality_reasons": dq_reasons,
         "transition": trans,
+        "glance": glance(state, conflicts, policy, cfg["status"]),
         "model_book": model_book(state, trans, events),
-        "playbooks": playbook_policy(state, cfg),
+        "playbooks": policy,
         "provenance": provenance or {},
         "note": "Regime describes conditions and gates playbook eligibility. It is never a trade signal.",
     }

@@ -290,3 +290,40 @@ def test_fetch_inputs_uses_three_requests(monkeypatch, cfg):
     out = fetch_inputs(AS_OF, cfg, MassiveREST(api_key="k", limiter=lim))
     assert out["requests"] == 3 and lim.n == 3
     assert out["grouped_date"] == dt.date(2026, 10, 5)
+
+
+# ----- glance -----
+
+
+def test_glance_range_day(cfg):
+    from tradekit.regime.classify import glance
+
+    state = {"direction": "neutral", "structure": "range", "volatility": "normal", "participation": "mixed"}
+    g = glance(state, [], playbook_policy(state, cfg), cfg["status"])
+    assert g["headline"] == "🔁 RANGE DAY — fade the edges, trade catalysts"
+    assert g["chips"] == ["→ Neutral", "🔁 Range", "● Normal vol", "◐ Mixed"]
+    assert "range edge fade" in g["trade"]
+    assert any(c.startswith("fashionably late long (structure is range") for c in g["careful"])
+    assert g["off"] == []
+    assert g["provisional"] is True
+
+
+def test_glance_extreme_vol_moves_plays_off(cfg):
+    from tradekit.regime.classify import glance
+
+    state = {"direction": "neutral", "structure": "range", "volatility": "extreme", "participation": "mixed"}
+    g = glance(state, [], playbook_policy(state, cfg), cfg["status"])
+    assert "smallest size" in g["headline"]
+    assert any(o.startswith("range edge fade (volatility is extreme") for o in g["off"])
+
+
+def test_glance_trend_up_and_conflict(cfg):
+    down = _bars(list(reversed(_trend_up()["close"].tolist())))
+    a = assess(AS_OF, cfg, _trend_up(), down, _grouped(0.75, 9), dt.date(2026, 10, 5))
+    g = a["glance"]
+    assert g["headline"].startswith("📈 TREND UP")
+    assert any(c.startswith("⚠ QQQ down vs SPY up") for c in g["chips"])
+
+
+def test_glance_unclear_when_no_data(cfg):
+    assert run(cfg, None)["glance"]["headline"].startswith("❔ UNCLEAR")

@@ -475,8 +475,18 @@ def _regime_dimensional(as_json: bool, as_of: str | None, config_path: str | Non
         return
     from rich.table import Table
 
+    g = a["glance"]
+    console.print(f"\n[bold]{g['headline']}[/bold]")
+    console.print("  " + " · ".join(g["chips"]))
+    console.print("  [green]✅ Trade:[/green] " + (" · ".join(g["trade"]) or "none"))
+    console.print("  [yellow]⚠ Careful:[/yellow] " + (" · ".join(g["careful"]) or "none"))
+    console.print("  [red]❌ Off:[/red] " + (" · ".join(g["off"]) or "none"))
+    if g["provisional"]:
+        console.print("  [dim]Provisional: thresholds are experimental (not yet approved).[/dim]")
+    console.print()
+
     st = a["state"]
-    t = Table(title=f"Market regime — {a['as_of']} (config {a['configuration_version']}, {a['configuration_status']})")
+    t = Table(title=f"Evidence — {a['as_of']} (config {a['configuration_version']}, {a['configuration_status']})")
     t.add_column("Dimension", style="bold cyan")
     t.add_column("Read")
     t.add_column("Evidence")
