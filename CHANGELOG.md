@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-06
+
 ### Added
 
 - **Slow Day Checklist operator doc** — `docs/slow-day-checklist.md` records Roberto's
@@ -47,7 +49,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expiry is measured to the 16:00 ET close and floored at ten minutes, so gamma stays
   finite in the closing minutes and expired contracts are dropped rather than floored (#14)
 
+### Changed
+
+- **`tradekit regime` output** (#22). The default is the per-dimension assessment. The old SMA/RSI
+  table is `tradekit regime --legacy`; the HTML report's regime data is unchanged.
+- **The CLI date banner goes to stderr**, so `--json` stdout is a single parseable document on every
+  command.
+- **`tradekit scan` and `second-day` use the Finviz Elite universe** when `FINVIZ_AUTH_TOKEN` is set,
+  instead of the public screener scraper whose concurrent calls drew 403s (#21). Seed gainers require
+  at least 100K average daily volume.
+
 ### Fixed
+
+- **Finviz `%` columns were never converted on pandas 3** (#21): text columns are dtype `str`, not
+  `object`, so `_coerce_pct` skipped them.
+- **`test_rsi_is_in_the_default_quote_columns`** checks behaviour instead of source text (#22).
 
 - **Finviz Elite column codes for `rsi`, `change_open` and `gap`** (#13). Each was one higher
   than the export's actual code, so `rsi` requested *Change from Open*, `change_open` requested
@@ -151,6 +167,8 @@ standalone package designed to integrate with Daniel Miessler's
 
 [pai]: https://github.com/danielmiessler/LifeOS
 [smb]: https://www.smbtraining.com/
-[Unreleased]: https://github.com/davdunc/tradekit/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/davdunc/tradekit/compare/0.4.0...HEAD
+[0.4.0]: https://github.com/davdunc/tradekit/releases/tag/0.4.0
+[0.3.0]: https://github.com/davdunc/tradekit/compare/0.2.0...24eb38b
 [0.2.0]: https://github.com/davdunc/tradekit/releases/tag/0.2.0
 [0.1.0]: https://github.com/davdunc/tradekit/releases/tag/v0.1.0

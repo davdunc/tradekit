@@ -18,7 +18,7 @@
 # building — a Version here with no matching tag produces an unbuildable spec.
 
 Name:           tradekit
-Version:        0.3.0
+Version:        0.4.0
 Release:        1%{?dist}
 Summary:        Pre-market screening, technical analysis, and trade setup evaluation
 
@@ -140,6 +140,12 @@ PYTHONPATH=%{buildroot}%{python3_sitelib} \
 
 
 %changelog
+* Tue Oct 06 2026 David Duncan <davdunc@davidduncan.org> - 0.4.0-1
+- Per-dimension market regime (tradekit regime; ADR 0002) with Massive REST inputs.
+- Finviz shared rate limit and backoff, Elite universe cache, and api-errors 403 log.
+- CLI date banner moved to stderr; tradekit regime --legacy keeps the old table.
+- Fix Finviz % column coercion on pandas 3.
+
 * Fri Aug 28 2026 David Duncan <davdunc@davidduncan.org> - 0.3.0-1
 - Sync spec with the tree after four merged PRs; it had been stale at 0.1.0.
 - Add Requires: python3-matplotlib >= 3.11.1 for round-trip blotter rendering.
