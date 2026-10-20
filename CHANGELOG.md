@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Slow Day Checklist operator doc** — `docs/slow-day-checklist.md` records Roberto's
+  five-check prioritization protocol for quiet sessions (big picture, sector ETFs,
+  catalysts, premarket dollar volume, relative strength/weakness) with the tradekit
+  commands that feed each check, and states their limits explicitly: `regime` is a
+  completed-session context read, `groups` ranks rotation but supplies no price levels,
+  and premarket VWAP / dollar volume is a platform-side input tradekit does not compute.
+  C-size risk and the RVOL 1.5+ / ≤0.8 thresholds are carried as Roberto's attributed
+  guidance, not validated automated gates. The executable workflow lives in LifeOS
+  (`skills/Trading/Workflows/SlowDayChecklist.md`).
+- **DW renderer carries the macro synthesis line** — `render_dw_plan` now renders
+  `macro.regime_bias` as a blockquote (the same way `render_game_plan` already does), so
+  a slow-day plan's five-check summary reaches the Discipline Workshop view instead of
+  being silently dropped. Backward-compatible: fires only when the macro line is set, and
+  existing records render unchanged. Regression-tested with a store round-trip of a
+  WAIT-plan (no thesis, five-check summary, C-size/RVOL rules) through both renderers —
+  nothing padded, nothing dropped. The 3 pre-existing `test_cli_cards` failures and ruff
+  errors on main are untouched.
+
 - **Discipline Workshop graduation call (W/L)** — `DisciplineScore.graduation` /
   `DisciplineResult.graduation` compute a binary win/loss independent of the 0-10
   score: any of the four hard-violation criteria (`followed_game_plan`,
