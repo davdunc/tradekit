@@ -11,27 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Per-dimension market regime** (#22, ADR 0002). `tradekit regime` describes direction, structure,
-  volatility, participation, liquidity, events and data quality independently, each with evidence and
-  an explicit `unknown`. A separate policy step marks playbooks `eligible` / `conditional` / `blocked`
-  with reasons, and an M1–M6 adapter maps the state onto model-book cases. Every assessment carries a
-  read-at-a-glance `glance` (headline, chips, Trade / Careful / Off). Thresholds come only from a
-  versioned config (`~/.config/tradekit/regime.yaml`). A missing config is an error, and
-  `config/regime.example.yaml` ships proposed, experimental values. Inputs are three bulk Massive
-  requests. Assessments are deterministic, ignore bars on or after `as_of`, and are stored without
-  being rewritten. `--json` is the LifeOS contract (`docs/output-schema.md`). Never a trade signal.
-- **Massive REST client** (`data/massive_rest.py`): daily bars and grouped daily aggregates, capped at
-  10 requests/second. A 403 is recorded and not retried. Daily dates are taken in America/New_York.
-- **Finviz rate limit and backoff** (#21). Every Finviz request goes through `data/finviz_http.py`:
-  a file-locked limiter (10 requests / 5 s across local processes) and 403/429/5xx retry with capped,
-  jittered exponential backoff that honours `Retry-After`. Exhausted retries raise `FinvizThrottled`,
-  which the CLI reports as "UNAVAILABLE, not empty" (exit 3).
-- **Finviz universe export** (#21). `FinvizEliteProvider.get_universe()` fetches the whole price-over-$1
-  universe in one request and caches it for `finviz_cache_ttl_minutes`. Top gainers, losers, unusual
-  volume and most active are local filters over it, and `get_quotes()` answers from the cache.
-- **API error log** (#21). Paid-API 403s append redacted, path-only events to
-  `~/.local/state/api-errors/events.jsonl` for LifeOS's `api_errors.py report`, which files them as
-  `bug` + `api-403` issues.
+- **Slow Day Checklist operator doc** — `docs/slow-day-checklist.md` records Roberto's
+  five-check prioritization protocol for quiet sessions (big picture, sector ETFs,
+  catalysts, premarket dollar volume, relative strength/weakness) with the tradekit
+  commands that feed each check, and states their limits explicitly: `regime` is a
+  completed-session context read, `groups` ranks rotation but supplies no price levels,
+  and premarket VWAP / dollar volume is a platform-side input tradekit does not compute.
+  C-size risk and the RVOL 1.5+ / ≤0.8 thresholds are carried as Roberto's attributed
+  guidance, not validated automated gates. The executable workflow lives in LifeOS
+  (`skills/Trading/Workflows/SlowDayChecklist.md`).
+- **DW renderer carries the macro synthesis line** — `render_dw_plan` now renders
+  `macro.regime_bias` as a blockquote (the same way `render_game_plan` already does), so
+  a slow-day plan's five-check summary reaches the Discipline Workshop view instead of
+  being silently dropped. Backward-compatible: fires only when the macro line is set, and
+  existing records render unchanged. Regression-tested with a store round-trip of a
+  WAIT-plan (no thesis, five-check summary, C-size/RVOL rules) through both renderers —
+  nothing padded, nothing dropped. The 3 pre-existing `test_cli_cards` failures and ruff
+  errors on main are untouched.
 
 - **Discipline Workshop graduation call (W/L)** — `DisciplineScore.graduation` /
   `DisciplineResult.graduation` compute a binary win/loss independent of the 0-10
