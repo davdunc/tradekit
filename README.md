@@ -30,6 +30,10 @@ or as the data engine for a [LifeOS][pai] pack (formerly Personal AI Infrastruct
 - **Discipline Workshop plans** — render the stored game plan in the format the
   MyInvestingClub Discipline Workshop expects in-channel by 9:00 AM market time:
   `tradekit cards gameplan --format dw`.
+- **Slow Day Checklist** — the five-check prioritization protocol for quiet sessions
+  (big picture → sector ETFs → catalysts → premarket dollar volume → relative
+  strength/weakness), with the tradekit commands that feed each check:
+  [docs/slow-day-checklist.md](docs/slow-day-checklist.md).
 
 ---
 

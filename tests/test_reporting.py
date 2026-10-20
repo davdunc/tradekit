@@ -677,6 +677,46 @@ class TestRenderDwPlan:
         out = render_dw_plan(_dw_plan(market_cycle=None, market_regime="Choppy"))
         assert "**Market Assessment:** Choppy" in out
 
+    def test_macro_regime_bias_renders_as_blockquote(self):
+        out = render_dw_plan(_dw_plan(macro={"regime_bias": "Slow-day five checks: nothing fresh, prioritize."}))
+        assert "> Slow-day five checks: nothing fresh, prioritize." in out
+
+    def test_slow_day_wait_plan_survives_store_and_both_renderers(self, tmp_path):
+        """A quiet-session plan: no thesis, five-check summary in the macro line, C-size/RVOL rules.
+
+        Nothing may be padded, and the macro synthesis must reach both renderers —
+        the DW view renders it as a blockquote like render_game_plan does.
+        """
+        plan = GamePlanRecord(
+            date="2026-10-20",
+            market_regime="neutral · range · low vol (provisional)",
+            thesis_ticker="",  # WAIT — scanning for relative strength/weakness
+            macro={
+                "regime_bias": (
+                    "Slow-day five checks: (1) SPY mid-range; (2) XLF into 56.94; "
+                    "(3) catalysts none; (4) top premarket dollar volume 2.1M; "
+                    "(5) RS pending the open"
+                )
+            },
+            rules=[
+                "C-size risk on slow-day ideas (approved R-CONFIG; if absent, UNDEFINED — do not derive risk)",
+                "RVOL 1.5+ target, ≤0.8 caution (Roberto's guidance)",
+                "WAIT — scanning for relative strength/weakness; no manufactured thesis",
+            ],
+        )
+        store = FileReportStore(root=tmp_path)
+        store.put(plan)
+        rebuilt = GamePlanRecord.from_item(store.get("GAMEPLAN", "2026-10-20"))
+
+        assert rebuilt.thesis_ticker == ""
+        assert len(rebuilt.rules) == 3
+        assert rebuilt.macro.regime_bias.startswith("Slow-day five checks")
+
+        for out in (render_dw_plan(rebuilt), render_game_plan(rebuilt)):
+            assert "Slow-day five checks" in out
+            assert "RVOL 1.5" in out
+            assert "WAIT — scanning for relative strength/weakness" in out
+
     def test_closing_line_present_verbatim(self):
         assert DW_CLOSING_LINE in render_dw_plan(_dw_plan())
 
