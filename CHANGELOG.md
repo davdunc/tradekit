@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.4.0] — 2026-10-06
+## [0.4.1] — 2026-10-20
+
+### Changed
+
+- **Version roll-forward** — 0.4.0 was bumped in-tree but never tagged, released, or
+  published; its entries ship in 0.4.1.
 
 ### Added
 

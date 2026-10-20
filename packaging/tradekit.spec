@@ -18,7 +18,7 @@
 # building — a Version here with no matching tag produces an unbuildable spec.
 
 Name:           tradekit
-Version:        0.4.0
+Version:        0.4.1
 Release:        1%{?dist}
 Summary:        Pre-market screening, technical analysis, and trade setup evaluation
 
@@ -140,6 +140,10 @@ PYTHONPATH=%{buildroot}%{python3_sitelib} \
 
 
 %changelog
+* Tue Oct 20 2026 David Duncan <davdunc@davidduncan.org> - 0.4.1-1
+- Release 0.4.1: slow-day checklist operator doc and DW renderer fix.
+- 0.4.0 was never tagged or published; its content ships in 0.4.1.
+
 * Tue Oct 06 2026 David Duncan <davdunc@davidduncan.org> - 0.4.0-1
 - Per-dimension market regime (tradekit regime; ADR 0002) with Massive REST inputs.
 - Finviz shared rate limit and backoff, Elite universe cache, and api-errors 403 log.
