@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Releases ship on GitHub, not PyPI** — `release.yml` now builds the wheel and sdist
+  for each `v*` tag and attaches them to the GitHub release (it can also be run by hand
+  for an existing tag). The PyPI publish step is gone: the `tradekit` name on PyPI
+  belongs to an unrelated project, so every publish failed. Install from GitHub as the
+  README describes. Renaming the distribution is tracked in #30.
+
 ## [0.5.0] — 2026-11-01
 
 ### Added
