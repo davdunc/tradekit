@@ -60,7 +60,7 @@ Native Windows and WSL keep separate home directories, though, so each would hav
 To share one WSL install with Windows instead — e.g. Claude for Windows and Claude in WSL
 working off the same keys and report history — copy the shims from
 [`packaging/windows/`](packaging/windows/) onto your Windows `PATH`
-(`%USERPROFILE%.localbin` works):
+(`%USERPROFILE%\.local\bin` works):
 
 - `tradekit.cmd` — for cmd and PowerShell
 - `tradekit` — for Git Bash (what Claude Code's Bash tool uses on Windows)
