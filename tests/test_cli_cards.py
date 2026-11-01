@@ -8,7 +8,6 @@ from click.testing import CliRunner
 from tradekit.cli import cli
 from tradekit.reporting import (
     AccountKind,
-    AccountPnL,
     DailyReportCard,
     Direction,
     FileReportStore,
@@ -17,6 +16,12 @@ from tradekit.reporting import (
     RiskLevel,
     TradePlan,
 )
+
+
+@pytest.fixture(autouse=True)
+def _account_kinds(monkeypatch):
+    """Map the fixture's account ids to books; ingest no longer defaults unmapped ids to LIVE."""
+    monkeypatch.setenv("TRADEKIT_ACCOUNT_KINDS", "1RB16917=LIVE,TR4425=SIM")
 
 
 @pytest.fixture
@@ -108,7 +113,7 @@ class TestOutFile:
         dest = tmp_path / "posts" / "plan.md"
         result = _run(["cards", "gameplan", "2026-08-31", "--store", str(store_root), "--out", str(dest)])
         assert result.exit_code == 0
-        text = dest.read_text()
+        text = dest.read_text(encoding="utf-8")
         # The file must be postable as-is: no ANSI escapes, no session banner.
         assert "\x1b[" not in text
         assert "ET —" not in text
@@ -123,7 +128,7 @@ class TestOutFile:
         dest = tmp_path / "plan.md"
         _run(["cards", "gameplan", "2026-08-31", "--store", str(store_root), "--out", str(dest)])
         piped = _run(["cards", "gameplan", "2026-08-31", "--store", str(store_root)])
-        assert dest.read_text() in piped.output
+        assert dest.read_text(encoding="utf-8") in piped.output
 
 
 class TestRiskOptions:
@@ -208,14 +213,14 @@ NARRATIVE_FIXTURE = {
 @pytest.fixture
 def falcon_stats_file(tmp_path):
     path = tmp_path / "falcon.json"
-    path.write_text(json.dumps(FALCON_STATS_FIXTURE))
+    path.write_text(json.dumps(FALCON_STATS_FIXTURE), encoding="utf-8")
     return path
 
 
 @pytest.fixture
 def narrative_file(tmp_path):
     path = tmp_path / "narrative.json"
-    path.write_text(json.dumps(NARRATIVE_FIXTURE))
+    path.write_text(json.dumps(NARRATIVE_FIXTURE), encoding="utf-8")
     return path
 
 
@@ -317,7 +322,7 @@ class TestCardsTrend:
     def test_out_writes_the_same_table(self, two_day_store, tmp_path):
         dest = tmp_path / "trend.md"
         _run(["cards", "trend", "--store", str(two_day_store), "--out", str(dest)])
-        assert "Multi-Day Trend" in dest.read_text()
+        assert "Multi-Day Trend" in dest.read_text(encoding="utf-8")
 
 
 class TestCardsPublish:
@@ -355,9 +360,7 @@ class TestCardsPublish:
         assert "$" not in result.output
         assert "locked for the rest of this week" not in result.output
 
-    def test_reviews_dir_writes_the_full_private_card(
-        self, tmp_path, falcon_stats_file, narrative_file, monkeypatch
-    ):
+    def test_reviews_dir_writes_the_full_private_card(self, tmp_path, falcon_stats_file, narrative_file, monkeypatch):
         store_root = tmp_path / "store"
         _run(
             [
@@ -387,7 +390,7 @@ class TestCardsPublish:
             ]
         )
         assert result.exit_code == 0
-        private_text = (reviews_dir / "REVIEW-2026-09-15.md").read_text()
+        private_text = (reviews_dir / "REVIEW-2026-09-15.md").read_text(encoding="utf-8")
         # The private file DOES carry $ amounts and the behavioral contract —
         # only the public targets are stripped.
         assert "$-95.40" in private_text or "$-131.20" in private_text

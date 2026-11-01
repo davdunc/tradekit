@@ -67,13 +67,13 @@ class FileReportStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         # Persist the full NoSQL item (incl. pk/sk/record_type) so each file is
         # self-describing and uploadable to a bucket without re-derivation.
-        path.write_text(json.dumps(doc.to_item(), indent=2, sort_keys=True))
+        path.write_text(json.dumps(doc.to_item(), indent=2, sort_keys=True), encoding="utf-8")
 
     def get(self, record_type: str, date: str, scope: str = "GLOBAL") -> dict | None:
         path = self._path(record_type, scope, date)
         if not path.exists():
             return None
-        return json.loads(path.read_text())
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def query(
         self,
@@ -92,7 +92,7 @@ class FileReportStore:
                 continue
             if until is not None and date > until:
                 continue
-            items.append(json.loads(path.read_text()))
+            items.append(json.loads(path.read_text(encoding="utf-8")))
         items.sort(key=lambda it: it.get("sk", ""))
         return items
 

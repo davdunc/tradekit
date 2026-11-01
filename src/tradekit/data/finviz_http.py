@@ -9,7 +9,7 @@ Before this module existed each call site was a bare ``requests.get``: no spacin
 and a throttled response turned into "no candidates found". Now:
 
 - ``RateLimiter`` spaces requests to ``max_requests`` per ``window`` seconds. The timestamps
-  live in a file under ``state_dir()`` behind an ``fcntl`` lock, so two tradekit processes on
+  live in a file under ``state_dir()`` behind an exclusive file lock, so two tradekit processes on
   one node (``tradekit scan`` and ``tradekit second-day`` started together) share one budget.
 - ``FinvizSession.request`` retries 403 / 429 / 5xx / connection errors with an
   exponentially growing, capped, jittered delay, honouring ``Retry-After`` when present.
@@ -35,16 +35,12 @@ from pathlib import Path
 
 import requests
 
+from tradekit._filelock import exclusive_lock
 from tradekit.data import api_errors
 
 logger = logging.getLogger(__name__)
 
 RETRYABLE_STATUS = frozenset({403, 429, 500, 502, 503, 504})
-
-try:  # POSIX only; tradekit runs on Linux / WSL, but don't break an import elsewhere.
-    import fcntl
-except ImportError:  # pragma: no cover
-    fcntl = None  # type: ignore[assignment]
 
 
 class FinvizThrottled(RuntimeError):
@@ -116,7 +112,6 @@ class RateLimiter:
         self._clock = clock
         self._sleep = sleep
         self._local = threading.Lock()
-        self._mem: list[float] = []
 
     @property
     def path(self) -> Path:
@@ -128,31 +123,17 @@ class RateLimiter:
 
     @contextmanager
     def _locked(self):
-        with self._local:
-            if fcntl is None:
-                yield None
-                return
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.path.with_suffix(".lock"), "a+") as fh:
-                fcntl.flock(fh, fcntl.LOCK_EX)
-                try:
-                    yield fh
-                finally:
-                    fcntl.flock(fh, fcntl.LOCK_UN)
+        with self._local, exclusive_lock(self.path.with_suffix(".lock")):
+            yield
 
     def _load(self) -> list[float]:
-        if fcntl is None:
-            return list(self._mem)
         try:
-            return [float(t) for t in json.loads(self.path.read_text())]
-        except (OSError, ValueError, TypeError):
+            return [float(t) for t in json.loads(self.path.read_text(encoding="utf-8"))]
+        except OSError, ValueError, TypeError:
             return []
 
     def _save(self, stamps: list[float]) -> None:
-        if fcntl is None:
-            self._mem = stamps
-            return
-        self.path.write_text(json.dumps(stamps))
+        self.path.write_text(json.dumps(stamps), encoding="utf-8")
 
     def acquire(self) -> float:
         """Block until a request slot is free, record it, and return seconds waited."""

@@ -551,7 +551,7 @@ class TestAccountKindResolution:
     def test_toml_config_used_when_env_absent(self, monkeypatch, tmp_path):
         monkeypatch.delenv("TRADEKIT_ACCOUNT_KINDS", raising=False)
         cfg = tmp_path / "accounts.toml"
-        cfg.write_text('[accounts]\n"AAA" = "LIVE"\n"BBB" = "SIM"\n')
+        cfg.write_text('[accounts]\n"AAA" = "LIVE"\n"BBB" = "SIM"\n', encoding="utf-8")
         monkeypatch.setattr("tradekit.reporting.ingest.accounts_config", lambda: cfg)
         assert default_account_kinds() == {"AAA": AccountKind.LIVE, "BBB": AccountKind.SIM}
 

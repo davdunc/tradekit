@@ -142,7 +142,7 @@ class Settings(BaseSettings):
         path = self.config_dir / "watchlists.yaml"
         if not path.exists():
             return {"default": []}
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         # Normalize: ensure all values are lists
         return {k: (v if isinstance(v, list) else []) for k, v in data.items()}
@@ -151,14 +151,14 @@ class Settings(BaseSettings):
         path = self.config_dir / "screener.yaml"
         if not path.exists():
             return {}
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
 
     def load_indicator_presets(self) -> dict:
         path = self.config_dir / "indicators.yaml"
         if not path.exists():
             return {}
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
 
 

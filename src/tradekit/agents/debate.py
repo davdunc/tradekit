@@ -186,6 +186,6 @@ async def bull_bear_debate(
         out_dir.mkdir(parents=True, exist_ok=True)
         slug = result.timestamp.replace(":", "").replace("-", "")[:15]
         path = out_dir / f"{ticker}_{slug}.json"
-        path.write_text(result.to_json())
+        path.write_text(result.to_json(), encoding="utf-8")
 
     return result

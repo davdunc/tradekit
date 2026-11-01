@@ -47,7 +47,7 @@ def normalize(url: str) -> tuple[str, str]:
 
 def _node() -> str:
     try:
-        return Path("/etc/hostname").read_text().strip() or socket.gethostname()
+        return Path("/etc/hostname").read_text(encoding="utf-8").strip() or socket.gethostname()
     except OSError:
         return socket.gethostname()
 

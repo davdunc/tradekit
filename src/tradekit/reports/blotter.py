@@ -160,7 +160,7 @@ def _env_credential(name: str) -> str:
         try:
             if not path.exists():
                 continue
-            for line in path.read_text().splitlines():
+            for line in path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if not line or line.startswith("#") or "=" not in line:
                     continue
@@ -197,7 +197,7 @@ def fetch_minute_bars(symbols: set[str], date: str, *, settings=None):
         logger.error("Failed to fetch minute bars for %s: %s", date, type(exc).__name__)
         return _fetch_minute_bars_rest(symbols, date, settings=settings)
     out: dict[str, list] = {s: [] for s in symbols}
-    with gzip.open(io.BytesIO(body), "rt") as fh:
+    with gzip.open(io.BytesIO(body), "rt", encoding="utf-8") as fh:
         for line in fh:
             tk, _, rest = line.partition(",")
             if tk not in symbols:
@@ -232,10 +232,7 @@ def _fetch_minute_bars_rest(symbols: set[str], date: str, *, settings=None):
         logger.error("No POLYGON_API_KEY available for same-day fallback fetch")
         return out
     for symbol in symbols:
-        url = (
-            f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/minute/"
-            f"{date}/{date}"
-        )
+        url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/minute/{date}/{date}"
         try:
             resp = requests.get(
                 url,

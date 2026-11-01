@@ -27,12 +27,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from tradekit._filelock import exclusive_lock
 from tradekit.data.finviz_http import finviz_get, redact
-
-try:
-    import fcntl
-except ImportError:  # pragma: no cover
-    fcntl = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +74,7 @@ class FinvizEliteConfig:
 
             for p in [*env_file_candidates(), Path.home() / ".env"]:
                 if p.exists():
-                    for line in p.read_text().splitlines():
+                    for line in p.read_text(encoding="utf-8").splitlines():
                         if line.strip().startswith("FINVIZ_AUTH_TOKEN"):
                             tok = line.split("=", 1)[1].strip().strip('"').strip("'")
                             break
@@ -294,10 +290,7 @@ class FinvizEliteProvider:
         ttl = self._ttl_seconds(ttl_minutes)
         csv_path.parent.mkdir(parents=True, exist_ok=True)
 
-        lock_fh = open(csv_path.with_suffix(".lock"), "a+")
-        try:
-            if fcntl is not None:
-                fcntl.flock(lock_fh, fcntl.LOCK_EX)
+        with exclusive_lock(csv_path.with_suffix(".lock")):
             if not refresh and csv_path.exists() and time.time() - csv_path.stat().st_mtime < ttl:
                 logger.info("Finviz universe from cache (%s)", csv_path.name)
                 return pd.read_csv(csv_path)
@@ -314,14 +307,11 @@ class FinvizEliteProvider:
             df.to_csv(tmp, index=False)
             tmp.replace(csv_path)
             meta_path.write_text(
-                json.dumps({"filters": filters, "cols": cols, "rows": len(df), "fetched": time.time()})
+                json.dumps({"filters": filters, "cols": cols, "rows": len(df), "fetched": time.time()}),
+                encoding="utf-8",
             )
             logger.info("Finviz universe: %d rows cached", len(df))
             return df
-        finally:
-            if fcntl is not None:
-                fcntl.flock(lock_fh, fcntl.LOCK_UN)
-            lock_fh.close()
 
     def _quotes_from_universe(self, tickers: list[str], cols: list[str]) -> pd.DataFrame | None:
         """Serve get_quotes from a fresh universe cache, or None if it can't answer completely."""
@@ -329,8 +319,8 @@ class FinvizEliteProvider:
         try:
             if time.time() - csv_path.stat().st_mtime >= self._ttl_seconds(None):
                 return None
-            meta = json.loads(meta_path.read_text())
-        except (OSError, ValueError):
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except OSError, ValueError:
             return None
         if not set(cols) <= set(meta.get("cols", [])):
             return None

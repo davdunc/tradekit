@@ -20,7 +20,7 @@ def save(assessment: dict, base: Path | None = None) -> Path:
     p = d / f"{assessment['assessment_id']}.json"
     if not p.exists():
         tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(assessment, indent=2, default=str))
+        tmp.write_text(json.dumps(assessment, indent=2, default=str), encoding="utf-8")
         tmp.replace(p)
     return p
 
@@ -34,5 +34,5 @@ def history(as_of: dt.date, limit: int = 30, base: Path | None = None) -> list[d
     for d in sorted(p for p in base.iterdir() if p.is_dir() and p.name < str(as_of))[-limit:]:
         files = sorted(d.glob("*.json"), key=lambda f: f.stat().st_mtime)
         if files:
-            out.append(json.loads(files[-1].read_text()))
+            out.append(json.loads(files[-1].read_text(encoding="utf-8")))
     return out

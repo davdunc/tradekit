@@ -65,7 +65,7 @@ def test_missing_config_is_an_error(tmp_path):
 
 def test_missing_key_is_an_error(tmp_path):
     p = tmp_path / "r.yaml"
-    p.write_text(EXAMPLE.read_text().replace("trend_min: 0.40", ""))
+    p.write_text(EXAMPLE.read_text().replace("trend_min: 0.40", ""), encoding="utf-8")
     with pytest.raises(RegimeConfigError, match="structure.trend_min"):
         load_config(p)
 
@@ -189,9 +189,9 @@ def test_transition_stable():
 def test_store_never_overwrites(cfg, tmp_path):
     a = run(cfg, _trend_up(), _grouped(0.7, 8))
     p = store.save(a, base=tmp_path)
-    p.write_text('{"tampered": true}')
+    p.write_text('{"tampered": true}', encoding="utf-8")
     store.save(a, base=tmp_path)
-    assert json.loads(p.read_text()) == {"tampered": True}  # existing record untouched
+    assert json.loads(p.read_text(encoding="utf-8")) == {"tampered": True}  # existing record untouched
 
 
 def test_history_excludes_as_of_and_later(cfg, tmp_path):
@@ -259,9 +259,9 @@ def test_massive_403_recorded_and_not_retried(monkeypatch, tmp_path):
         c.grouped_daily(dt.date(2026, 10, 5))
     assert len(calls) == 1  # no retry against the feed
     assert "SECRET" not in str(e.value)
-    ev = json.loads(log.read_text())
+    ev = json.loads(log.read_text(encoding="utf-8"))
     assert (ev["provider"], ev["status"], ev["app"]) == ("massive", 403, "tradekit")
-    assert "SECRET" not in log.read_text()
+    assert "SECRET" not in log.read_text(encoding="utf-8")
 
 
 def test_daily_bar_dates_are_new_york_sessions(monkeypatch):
