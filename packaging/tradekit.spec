@@ -18,7 +18,7 @@
 # building — a Version here with no matching tag produces an unbuildable spec.
 
 Name:           tradekit
-Version:        0.4.1
+Version:        0.5.0
 Release:        1%{?dist}
 Summary:        Pre-market screening, technical analysis, and trade setup evaluation
 
@@ -140,6 +140,11 @@ PYTHONPATH=%{buildroot}%{python3_sitelib} \
 
 
 %changelog
+* Sun Nov 01 2026 David Duncan <davdunc@davidduncan.org> - 0.5.0-1
+- Release 0.5.0: native Windows support (UTF-8 I/O, cross-platform file lock)
+  and WSL shims for running tradekit from Windows.
+- Fix cards ingest/trend tests and lint errors that kept CI red since 0.4.1.
+
 * Tue Oct 20 2026 David Duncan <davdunc@davidduncan.org> - 0.4.1-1
 - Release 0.4.1: slow-day checklist operator doc and DW renderer fix.
 - 0.4.0 was never tagged or published; its content ships in 0.4.1.
