@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-01
+
 ### Added
 
 - **Windows support** — tradekit now runs natively on Windows as well as Linux / WSL,
@@ -192,8 +194,9 @@ standalone package designed to integrate with Daniel Miessler's
 
 [pai]: https://github.com/danielmiessler/LifeOS
 [smb]: https://www.smbtraining.com/
-[Unreleased]: https://github.com/davdunc/tradekit/compare/0.4.0...HEAD
-[0.4.0]: https://github.com/davdunc/tradekit/releases/tag/0.4.0
+[Unreleased]: https://github.com/davdunc/tradekit/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/davdunc/tradekit/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/davdunc/tradekit/releases/tag/v0.4.1
 [0.3.0]: https://github.com/davdunc/tradekit/compare/0.2.0...24eb38b
 [0.2.0]: https://github.com/davdunc/tradekit/releases/tag/0.2.0
 [0.1.0]: https://github.com/davdunc/tradekit/releases/tag/v0.1.0
