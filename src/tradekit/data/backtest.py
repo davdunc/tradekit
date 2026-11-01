@@ -82,7 +82,7 @@ class BacktestProvider:
 
         if cache_path.exists():
             logger.debug("Cache hit: %s", cache_path)
-            with gzip.open(cache_path, "rt") as f:
+            with gzip.open(cache_path, "rt", encoding="utf-8") as f:
                 return pd.read_csv(f)
 
         key = self._s3_key(date)
@@ -101,7 +101,7 @@ class BacktestProvider:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_bytes(raw)
 
-        with gzip.open(io.BytesIO(raw), "rt") as f:
+        with gzip.open(io.BytesIO(raw), "rt", encoding="utf-8") as f:
             return pd.read_csv(f)
 
     def get_history(self, ticker: str, period: str = "3mo", interval: str = "1d") -> pd.DataFrame:

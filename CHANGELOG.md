@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Windows support** — tradekit now runs natively on Windows as well as Linux / WSL,
+  and CI tests both (`windows-latest` joins the matrix). For a Windows Claude session
+  that should share one install with WSL, `packaging/windows/` ships `tradekit.cmd`
+  (cmd / PowerShell) and a `tradekit` sh shim (Git Bash) that run the WSL-installed
+  tradekit through a login shell, so keys, regime config, and the report store stay
+  single-sourced.
+
+### Fixed
+
+- **UTF-8 everywhere** — every text read/write now passes `encoding="utf-8"`. On Windows
+  the locale default (cp1252) crashed writing report cards that contain `—`.
+- **Finviz rate limit is cross-process on Windows** — the shared budget and universe-export
+  lock used `fcntl` and silently degraded to per-process on Windows; a new
+  `tradekit._filelock.exclusive_lock` uses `fcntl` on POSIX and `msvcrt` on Windows.
+- **`cards` CLI tests** — the ingest/trend tests now declare `TRADEKIT_ACCOUNT_KINDS`;
+  they had been failing on every platform since ingest stopped defaulting unmapped
+  accounts to LIVE. Also cleared two pre-existing ruff errors that kept CI red.
+
 ## [0.4.1] — 2026-10-20
 
 ### Changed
