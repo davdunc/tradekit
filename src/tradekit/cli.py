@@ -677,6 +677,94 @@ def _regime_legacy(source: str | None) -> None:
     console.print()
 
 
+@cli.command()
+@click.option(
+    "--grade",
+    required=True,
+    type=click.Choice(["A+", "A", "B", "C", "D"], case_sensitive=False),
+    help="Setup grade; sets the share of the daily stop at risk.",
+)
+@click.option("--daily-stop", type=float, required=True, help="Daily stop (max daily loss), in dollars.")
+@click.option("--entry", type=float, required=True, help="Entry price.")
+@click.option(
+    "--stop", "stop_price", type=float, required=True, help="Structural stop price; its side sets the direction."
+)
+@click.option(
+    "--strategy",
+    type=click.Choice(["standard", "spencer", "rubberband", "fashionably-late"]),
+    default="standard",
+    show_default=True,
+    help="Exit plan.",
+)
+@click.option("--vwap", type=float, default=None, help="VWAP (needed by the rubberband exit plan).")
+@click.option("--max-risk", type=float, default=None, help="Cap risk per trade (e.g. a per-symbol 1R limit).")
+@click.option("--atr", type=float, default=None, help="ATR at entry; enables the minimum-stop-distance check.")
+@click.option("--min-stop-atr", type=float, default=1.5, show_default=True, help="Minimum stop distance in ATRs.")
+@click.option("--checklist", type=click.IntRange(0, 6), default=0, help="Pre-trade checklist steps completed (0-6).")
+@click.option("--json", "as_json", is_flag=True, help="Emit the plan as JSON.")
+def size(grade, daily_stop, entry, stop_price, strategy, vwap, max_risk, atr, min_stop_atr, checklist, as_json):
+    """Grade-based position size, targets and exit plan (ASET risk-tool rules).
+
+    Risk = daily stop x grade allocation (A+ 80%, A 30%, B 15%, C 5%, D 0%),
+    shares = risk / |entry - stop|. No math, no trade.
+    """
+    import json
+
+    from tradekit.analysis.risk import PRE_TRADE_CHECKLIST, STRATEGIES, RiskError, clearance, plan_trade
+
+    try:
+        plan = plan_trade(
+            grade,
+            daily_stop,
+            entry,
+            stop_price,
+            strategy=strategy,
+            refs={"vwap": vwap} if vwap is not None else None,
+            max_risk=max_risk,
+            atr=atr,
+            min_stop_atr=min_stop_atr if atr is not None else None,
+        )
+    except RiskError as e:
+        raise click.UsageError(str(e)) from e
+
+    status, message = clearance(plan, checklist)
+    if as_json:
+        click.echo(json.dumps({**plan.to_dict(), "clearance": {"status": status, "message": message}}, indent=2))
+        return
+
+    st = STRATEGIES[strategy]
+    d = (plan.direction or "-").upper()
+    console.print(f"\n[bold cyan]POSITION SIZE — grade {plan.grade} · {d} · {st.name}[/bold cyan]")
+    console.print(f"  Allocation      {plan.allocation:.0%} of daily stop {daily_stop:,.2f}")
+    console.print(f"  Risk budget     {plan.risk_budget:,.2f}" + ("  [yellow](capped)[/yellow]" if plan.capped else ""))
+    console.print(f"  Distance        {plan.distance:,.2f} / share")
+    console.print(f"  [bold]Shares          {plan.shares:,}[/bold]   (actual risk {plan.actual_risk:,.2f})")
+    if plan.direction:
+        console.print(f"  Target 1R       {plan.target_1r:,.2f}   (+{plan.shares * plan.distance:,.0f})")
+        console.print(f"  Target 2R       {plan.target_2r:,.2f}   (+{plan.shares * 2 * plan.distance:,.0f})")
+    if plan.tranches:
+        console.print(f"\n  [bold]Exit plan[/bold] — {st.rule}")
+        console.print(f"  {'Tranche':<20}{'Share':>7}{'R':>7}{'Price':>11}{'Shares':>8}{'P&L':>10}")
+        for t in plan.tranches:
+            console.print(
+                f"  T{t.index} {t.label:<17}{t.pct:>6.0f}%{t.r:>7.2f}{t.price:>11,.2f}{t.shares:>8,}{t.pnl:>+10,.0f}"
+            )
+        console.print("\n  [bold]Scenarios[/bold] (rest stopped at the original stop)")
+        for s in plan.scenarios:
+            style = "green" if s.pnl > 0.5 else ("red" if s.pnl < -0.5 else "dim")
+            console.print(f"  {s.name:<24}[{style}]{s.pnl:>+10,.0f}  {s.r:>+6.2f}R[/{style}]")
+    console.print("\n  [bold]Checks[/bold]")
+    for k, ok in plan.checks.items():
+        console.print(f"  {'[green]✓' if ok else '[red]✗'}[/] {k.replace('_', ' ')}")
+    for w in plan.warnings:
+        console.print(f"  [yellow]! {w}[/yellow]")
+    console.print(f"\n  [bold]Checklist {checklist}/{len(PRE_TRADE_CHECKLIST)}[/bold]")
+    for i, step in enumerate(PRE_TRADE_CHECKLIST, 1):
+        console.print(f"  {'[green]✓' if i <= checklist else '[dim]·'}[/] {i:02d} {step}")
+    color = {"READY": "green", "NO TRADE": "red"}.get(status, "yellow")
+    console.print(f"\n  [bold {color}]{status}[/bold {color}] — {message}\n")
+
+
 @cli.command("second-day")
 @click.option("--min-change", type=float, default=5.0, help="Minimum yesterday move %.")
 @click.option("--min-vol-ratio", type=float, default=1.5, help="Minimum volume ratio vs avg.")
