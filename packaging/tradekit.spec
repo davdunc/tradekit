@@ -67,9 +67,9 @@ scoring, and bull/bear LLM-driven debate setups. It integrates with LifeOS
 (formerly Personal AI Infrastructure / PAI), Finviz Elite, the Falcon screener,
 and S3-compatible flat-file market data backends.
 
-Commands: analyze, debate, gameplan, groups, init, levels, morning, news,
-publish-review, regime, report, rs, sandwich, scan, second-day, watchlist,
-weekly-review.
+Commands: analyze, cards, debate, gameplan, gex, groups, init, levels, morning,
+news, publish-review, regime, report, rs, sandwich, scan, second-day, size,
+watchlist, weekly-review.
 
 On-disk paths follow the XDG Base Directory specification — data under
 $XDG_DATA_HOME, cache under $XDG_CACHE_HOME, state under $XDG_STATE_HOME. Two

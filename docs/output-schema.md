@@ -222,3 +222,56 @@ the assessment's own fields, so it never says more than the evidence does.
 
 Consumers must read `configuration_status`. While it is `experimental` the thresholds are uncalibrated
 proposals and the read is provisional.
+
+---
+
+## Position size plan
+
+One trade's size, targets, exit plan, and clearance. The rules are in
+[intents/position-sizing.md](intents/position-sizing.md).
+
+**Written by:** `tradekit size --json` (stdout only; never stored)
+**Read by:** LifeOS trading workflows, which pass `--daily-stop` = 3R and `--max-risk` = 1R for the trade's account
+
+Money fields are in the caller's currency units; tradekit never converts them. R fields are multiples of `distance`.
+
+```json
+{
+  "grade": "A+ | A | B | C | D",
+  "allocation": 0.15,
+  "daily_stop": 1000.0,
+  "risk_budget": 150.0,
+  "capped": false,
+  "direction": "long | short | null",
+  "entry": 30.0,
+  "stop": 30.5,
+  "distance": 0.5,
+  "shares": 300,
+  "actual_risk": 150.0,
+  "target_1r": 29.5,
+  "target_2r": 29.0,
+  "strategy": "standard | spencer | rubberband | fashionably-late",
+  "tranches": [
+    {"index": 1, "label": "1/3 distance", "pct": 33.33, "r": 1.0, "price": 29.5, "shares": 100, "pnl": 50.0}
+  ],
+  "scenarios": [
+    {"name": "Stop before T1", "pnl": -150.0, "r": -1.0},
+    {"name": "All targets hit", "pnl": 300.0, "r": 2.0}
+  ],
+  "max_r": 3.0,
+  "checks": {
+    "grade_allocated": true,
+    "stop_structure_valid": true,
+    "shares_at_least_1": true,
+    "stop_outside_noise": true
+  },
+  "warnings": [],
+  "valid": true,
+  "clearance": {"status": "READY | NOT READY | NO TRADE", "message": "..."}
+}
+```
+
+- `tranches` and `scenarios` are empty for `standard` and when `direction` is null or `shares` is 0.
+- `checks.stop_outside_noise` is present only when `--atr` was given.
+- `valid` is the AND of `checks`. `warnings` never affect `valid`.
+- Consumers gate on `clearance.status == "READY"`, not on `valid` alone, because the checklist is part of clearance.

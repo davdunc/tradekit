@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`tradekit size`: grade-based position sizing (ASET risk-tool rules).**
+  - The grade sets the share of the daily stop at risk: A+ 80%, A 30%, B 15%, C 5%, D 0%.
+  - shares = floor(risk ÷ |entry − stop|).
+  - Exit plans: standard, Spencer Scalp, Rubberband (VWAP thirds), and Fashionably Late, each with stop-out scenarios.
+  - Clearance comes from the 6-step checklist.
+  - Opt-in `--max-risk` cap and `--atr` stop floor, plus `--json` output.
+  - Spec: `docs/intents/position-sizing.md`. Decision: ADR 0003.
+
 - **Discipline Workshop graduation call (W/L)** — `DisciplineScore.graduation` /
   `DisciplineResult.graduation` compute a binary win/loss independent of the 0-10
   score: any of the four hard-violation criteria (`followed_game_plan`,
