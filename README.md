@@ -30,6 +30,10 @@ or as the data engine for a [LifeOS][pai] pack (formerly Personal AI Infrastruct
 - **Discipline Workshop plans** — render the stored game plan in the format the
   MyInvestingClub Discipline Workshop expects in-channel by 9:00 AM market time:
   `tradekit cards gameplan --format dw`.
+- **Slow Day Checklist** — the five-check prioritization protocol for quiet sessions
+  (big picture → sector ETFs → catalysts → premarket dollar volume → relative
+  strength/weakness), with the tradekit commands that feed each check:
+  [docs/slow-day-checklist.md](docs/slow-day-checklist.md).
 
 ---
 
@@ -46,6 +50,26 @@ uv pip install -e .
 # Or directly from GitHub:
 uv tool install git+https://github.com/davdunc/tradekit
 ```
+
+### Windows
+
+tradekit runs natively on Windows (`uv tool install git+https://github.com/davdunc/tradekit`).
+Native Windows and WSL keep separate home directories, though, so each would have its own
+`.env`, regime config, and report store.
+
+To share one WSL install with Windows instead — e.g. Claude for Windows and Claude in WSL
+working off the same keys and report history — copy the shims from
+[`packaging/windows/`](packaging/windows/) onto your Windows `PATH`
+(`%USERPROFILE%\.local\bin` works):
+
+- `tradekit.cmd` — for cmd and PowerShell
+- `tradekit` — for Git Bash (what Claude Code's Bash tool uses on Windows)
+
+Both run `tradekit` inside WSL through a login shell. Set `TRADEKIT_WSL_DISTRO` to choose
+a distro; otherwise the WSL default is used. The working directory is translated
+automatically, but Windows-style path *arguments* are not: pass `--out` relative paths or
+`/mnt/c/...` paths. A native `tradekit.exe` in the same directory takes precedence over
+`tradekit.cmd`.
 
 ### Inside a LifeOS install
 

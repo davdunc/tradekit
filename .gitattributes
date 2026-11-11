@@ -1,0 +1,2 @@
+packaging/windows/tradekit text eol=lf
+*.cmd text eol=crlf

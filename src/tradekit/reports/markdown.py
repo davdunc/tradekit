@@ -107,7 +107,7 @@ def save_report(content: str, output_dir: Path | None = None, filename: str = ""
         filename = f"report_{now_et().strftime('%Y%m%d_%H%M')}.md"
 
     path = output_dir / filename
-    path.write_text(content)
+    path.write_text(content, encoding="utf-8")
     return path
 
 

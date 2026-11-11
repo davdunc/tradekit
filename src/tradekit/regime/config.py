@@ -38,7 +38,7 @@ def load_config(path: str | Path | None = None) -> dict:
             f"No regime config at {p}. Review config/regime.example.yaml (proposed, experimental values) and "
             "copy it there, or pass --config. tradekit will not classify on invented thresholds."
         )
-    cfg = yaml.safe_load(p.read_text()) or {}
+    cfg = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
     missing = []
     for key, subkeys in REQUIRED.items():
         if key not in cfg:

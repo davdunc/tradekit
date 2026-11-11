@@ -340,6 +340,11 @@ def render_dw_plan(plan: GamePlanRecord, config: RiskConfig | None = None) -> st
         lines.append(f"**Bias:** {plan.bias.value}{suffix}  ")
     if plan.thesis_ticker:
         lines.append(f"**Thesis Trade:** {plan.thesis_ticker}  ")
+    if plan.macro.regime_bias:
+        # The macro synthesis line — the slow-day five-check summary lives here.
+        # Rendered the same way render_game_plan renders it, so both views carry it.
+        lines.append("")
+        lines.append(f"> {plan.macro.regime_bias}")
     lines.append("")
 
     # Top runners: the observation list. Falls back to planned names carrying a

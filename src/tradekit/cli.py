@@ -1659,7 +1659,7 @@ def _read_env_file(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
     values: dict[str, str] = {}
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
@@ -1675,7 +1675,7 @@ def _upsert_env_file(path: Path, updates: dict[str, str]) -> None:
     new keys to a file that doesn't already contain them.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    existing_lines = path.read_text().splitlines() if path.exists() else []
+    existing_lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
 
     keys_to_update = set(updates.keys())
     new_lines: list[str] = []
@@ -1697,7 +1697,7 @@ def _upsert_env_file(path: Path, updates: dict[str, str]) -> None:
             if key in keys_to_update:
                 new_lines.append(f"{key}={updates[key]}")
 
-    path.write_text("\n".join(new_lines) + "\n")
+    path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
 
 
 @cli.command()
@@ -1864,7 +1864,7 @@ def groups(group_type: str, top: int, push_notion: bool, save: bool, diff_agains
     if save:
         out_path = group_snapshot(today_iso)
         out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(json.dumps(out, indent=2, default=str))
+        out_path.write_text(json.dumps(out, indent=2, default=str), encoding="utf-8")
         console.print(f"\n[dim]Saved: {out_path}[/dim]")
 
     # Diff against a prior snapshot
@@ -1878,7 +1878,7 @@ def groups(group_type: str, top: int, push_notion: bool, save: bool, diff_agains
             else:
                 prior_path = files[-1]
                 console.print(f"\n[bold magenta]DIFF vs {prior_path.name}[/bold magenta]")
-                prior = json.loads(prior_path.read_text())
+                prior = json.loads(prior_path.read_text(encoding="utf-8"))
                 _print_diff(out, prior, diff_metric, top)
         else:
             prior_path = data_home / f"groups_{diff_against}.json"
@@ -1886,7 +1886,7 @@ def groups(group_type: str, top: int, push_notion: bool, save: bool, diff_agains
                 console.print(f"[yellow]No snapshot at {prior_path}[/yellow]")
             else:
                 console.print(f"\n[bold magenta]DIFF vs {prior_path.name}[/bold magenta]")
-                prior = json.loads(prior_path.read_text())
+                prior = json.loads(prior_path.read_text(encoding="utf-8"))
                 _print_diff(out, prior, diff_metric, top)
 
     # Notion push
@@ -2067,7 +2067,9 @@ def weekly_review(
         if not ticker_list:
             console.print("[yellow]Falcon DB had no matching symbols. Falling back to defaults.[/yellow]")
     if not ticker_list and tickers_file:
-        ticker_list = [t.strip().upper() for t in Path(tickers_file).read_text().splitlines() if t.strip()]
+        ticker_list = [
+            t.strip().upper() for t in Path(tickers_file).read_text(encoding="utf-8").splitlines() if t.strip()
+        ]
     if not ticker_list and tickers:
         ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()]
     if not ticker_list:
@@ -2094,7 +2096,7 @@ def weekly_review(
     }
     snap_path = group_snapshot(today_iso)
     snap_path.parent.mkdir(parents=True, exist_ok=True)
-    snap_path.write_text(json.dumps(groups_data, indent=2, default=str))
+    snap_path.write_text(json.dumps(groups_data, indent=2, default=str), encoding="utf-8")
 
     data_home = tradekit_data_dir()
     prior_files = sorted([f for f in data_home.glob("groups_*.json") if today_iso not in f.name])
@@ -2102,7 +2104,7 @@ def weekly_review(
     industry_diff: list[dict] = []
     diff_label = ""
     if prior_files:
-        prior_data = json.loads(prior_files[-1].read_text())
+        prior_data = json.loads(prior_files[-1].read_text(encoding="utf-8"))
         diff_label = prior_files[-1].stem.replace("groups_", "")
         sector_diff = diff_groups(groups_data, prior_data, "sector", "perf_w", 99)
         industry_diff = diff_groups(groups_data, prior_data, "industry", "perf_w", 99)
@@ -2196,7 +2198,7 @@ def weekly_review(
     console.print("  [4/4] Rendering REVIEW.md...")
     md = _render_review_md(today_iso, groups_data, sector_diff, industry_diff, diff_label, rs_df, debates)
     review_path = out_path / "REVIEW.md"
-    review_path.write_text(md)
+    review_path.write_text(md, encoding="utf-8")
     console.print(f"\n[bold green]✓ Review written to:[/bold green] {review_path}")
     console.print(f"[dim]Edit freely, then run: tradekit publish-review {review_path}[/dim]")
 
@@ -2212,7 +2214,7 @@ def publish_review(review_path: str):
     from datetime import datetime
     from pathlib import Path
 
-    md = Path(review_path).read_text()
+    md = Path(review_path).read_text(encoding="utf-8")
     today_iso = datetime.now().strftime("%Y-%m-%d")
     _publish_review_to_notion(md, today_iso)
     console.print(f"[green]✓ Published {review_path} to Notion[/green]")
@@ -2422,7 +2424,7 @@ def rs(tickers: tuple[str, ...], top: int):
     today_iso = datetime.now().strftime("%Y-%m-%d")
     snap_path = group_snapshot(today_iso)
     if snap_path.exists():
-        groups_data = json.loads(snap_path.read_text())
+        groups_data = json.loads(snap_path.read_text(encoding="utf-8"))
         if "industry" not in groups_data:
             console.print("[bold]Cached snapshot missing industry, fetching...[/bold]")
             groups_data["industry"] = fp.get_group("industry").to_dict("records")
@@ -2718,7 +2720,7 @@ def cards_gameplan(
 
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(text)
+        out.write_text(text, encoding="utf-8")
         console.print(f"[green]Wrote {fmt} game plan for {date} to {out}[/green]")
     else:
         # click.echo, not console.print: Rich would interpret bracketed text in
@@ -2768,8 +2770,8 @@ def cards_ingest(
     from tradekit.reporting import FileReportStore, ingest_daily
 
     date = date or now_et().strftime("%Y-%m-%d")
-    falcon_stats = _json.loads(falcon_stats_path.read_text())
-    narrative = _json.loads(narrative_path.read_text()) if narrative_path else None
+    falcon_stats = _json.loads(falcon_stats_path.read_text(encoding="utf-8"))
+    narrative = _json.loads(narrative_path.read_text(encoding="utf-8")) if narrative_path else None
     report_store = FileReportStore(root=store)
     if scope != "GLOBAL":
         # ReportDocument.scope() is fixed to GLOBAL on the base schema today;
@@ -2821,7 +2823,7 @@ def cards_trend(since: str | None, until: str | None, scope: str, store: Path | 
 
     if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(text)
+        out.write_text(text, encoding="utf-8")
         console.print(f"[green]Wrote {len(rows)}-day trend to {out}[/green]")
     else:
         click.echo(text, nl=False)
@@ -2842,7 +2844,7 @@ _DEFAULT_PNL_TRACKER_DATA_SOURCE = "335973b9-8fae-80c2-b221-000be8988c79"  # Dai
 
 
 def _publish_card_to_slack(text: str, *, channel_id: str, thread_ts: str | None) -> None:
-    """Post the public-clean summary to Slack, via the Notion/Slack MCP that the parent Claude session holds auth for."""
+    """Post the public-clean summary to Slack, via the Slack MCP the parent Claude session holds auth for."""
     import subprocess
 
     thread_note = f" Post it as a threaded reply to message ts {thread_ts}." if thread_ts else ""
@@ -3007,7 +3009,7 @@ def cards_publish(
     if reviews_dir is not None:
         reviews_dir.mkdir(parents=True, exist_ok=True)
         private_path = reviews_dir / f"REVIEW-{date}.md"
-        private_path.write_text(render_daily_card(card))
+        private_path.write_text(render_daily_card(card), encoding="utf-8")
         console.print(f"[green]✓ Private review written to {private_path}[/green]")
 
     if not skip_slack:

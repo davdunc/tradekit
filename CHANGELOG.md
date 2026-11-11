@@ -17,6 +17,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Opt-in `--max-risk` cap and `--atr` stop floor, plus `--json` output.
   - Spec: `docs/intents/position-sizing.md`. Decision: ADR 0003.
 
+### Changed
+
+- **Releases ship on GitHub, not PyPI** — `release.yml` now builds the wheel and sdist
+  for each `v*` tag and attaches them to the GitHub release (it can also be run by hand
+  for an existing tag). The PyPI publish step is gone: the `tradekit` name on PyPI
+  belongs to an unrelated project, so every publish failed. Install from GitHub as the
+  README describes. Renaming the distribution is tracked in #30.
+
+## [0.5.0] — 2026-11-01
+
+### Added
+
+- **Windows support** — tradekit now runs natively on Windows as well as Linux / WSL,
+  and CI tests both (`windows-latest` joins the matrix). For a Windows Claude session
+  that should share one install with WSL, `packaging/windows/` ships `tradekit.cmd`
+  (cmd / PowerShell) and a `tradekit` sh shim (Git Bash) that run the WSL-installed
+  tradekit through a login shell, so keys, regime config, and the report store stay
+  single-sourced.
+
+### Fixed
+
+- **UTF-8 everywhere** — every text read/write now passes `encoding="utf-8"`. On Windows
+  the locale default (cp1252) crashed writing report cards that contain `—`.
+- **Finviz rate limit is cross-process on Windows** — the shared budget and universe-export
+  lock used `fcntl` and silently degraded to per-process on Windows; a new
+  `tradekit._filelock.exclusive_lock` uses `fcntl` on POSIX and `msvcrt` on Windows.
+- **`cards` CLI tests** — the ingest/trend tests now declare `TRADEKIT_ACCOUNT_KINDS`;
+  they had been failing on every platform since ingest stopped defaulting unmapped
+  accounts to LIVE. Also cleared two pre-existing ruff errors that kept CI red.
+
+## [0.4.1] — 2026-10-20
+
+### Changed
+
+- **Version roll-forward** — 0.4.0 was bumped in-tree but never tagged, released, or
+  published; its entries ship in 0.4.1.
+
+### Added
+
+- **Slow Day Checklist operator doc** — `docs/slow-day-checklist.md` records Roberto's
+  five-check prioritization protocol for quiet sessions (big picture, sector ETFs,
+  catalysts, premarket dollar volume, relative strength/weakness) with the tradekit
+  commands that feed each check, and states their limits explicitly: `regime` is a
+  completed-session context read, `groups` ranks rotation but supplies no price levels,
+  and premarket VWAP / dollar volume is a platform-side input tradekit does not compute.
+  C-size risk and the RVOL 1.5+ / ≤0.8 thresholds are carried as Roberto's attributed
+  guidance, not validated automated gates. The executable workflow lives in LifeOS
+  (`skills/Trading/Workflows/SlowDayChecklist.md`).
+- **DW renderer carries the macro synthesis line** — `render_dw_plan` now renders
+  `macro.regime_bias` as a blockquote (the same way `render_game_plan` already does), so
+  a slow-day plan's five-check summary reaches the Discipline Workshop view instead of
+  being silently dropped. Backward-compatible: fires only when the macro line is set, and
+  existing records render unchanged. Regression-tested with a store round-trip of a
+  WAIT-plan (no thesis, five-check summary, C-size/RVOL rules) through both renderers —
+  nothing padded, nothing dropped. The 3 pre-existing `test_cli_cards` failures and ruff
+  errors on main are untouched.
+
 - **Discipline Workshop graduation call (W/L)** — `DisciplineScore.graduation` /
   `DisciplineResult.graduation` compute a binary win/loss independent of the 0-10
   score: any of the four hard-violation criteria (`followed_game_plan`,
@@ -37,7 +94,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expiry is measured to the 16:00 ET close and floored at ten minutes, so gamma stays
   finite in the closing minutes and expired contracts are dropped rather than floored (#14)
 
+### Changed
+
+- **`tradekit regime` output** (#22). The default is the per-dimension assessment. The old SMA/RSI
+  table is `tradekit regime --legacy`; the HTML report's regime data is unchanged.
+- **The CLI date banner goes to stderr**, so `--json` stdout is a single parseable document on every
+  command.
+- **`tradekit scan` and `second-day` use the Finviz Elite universe** when `FINVIZ_AUTH_TOKEN` is set,
+  instead of the public screener scraper whose concurrent calls drew 403s (#21). Seed gainers require
+  at least 100K average daily volume.
+
 ### Fixed
+
+- **Finviz `%` columns were never converted on pandas 3** (#21): text columns are dtype `str`, not
+  `object`, so `_coerce_pct` skipped them.
+- **`test_rsi_is_in_the_default_quote_columns`** checks behaviour instead of source text (#22).
 
 - **Finviz Elite column codes for `rsi`, `change_open` and `gap`** (#13). Each was one higher
   than the export's actual code, so `rsi` requested *Change from Open*, `change_open` requested
@@ -141,6 +212,9 @@ standalone package designed to integrate with Daniel Miessler's
 
 [pai]: https://github.com/danielmiessler/LifeOS
 [smb]: https://www.smbtraining.com/
-[Unreleased]: https://github.com/davdunc/tradekit/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/davdunc/tradekit/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/davdunc/tradekit/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/davdunc/tradekit/releases/tag/v0.4.1
+[0.3.0]: https://github.com/davdunc/tradekit/compare/0.2.0...24eb38b
 [0.2.0]: https://github.com/davdunc/tradekit/releases/tag/0.2.0
 [0.1.0]: https://github.com/davdunc/tradekit/releases/tag/v0.1.0

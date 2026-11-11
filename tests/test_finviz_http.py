@@ -361,12 +361,12 @@ def test_403_recorded_redacted(fake_http, monkeypatch, tmp_path):
     s, _ = _session(max_attempts=2)
     fake_http.extend([_resp(403), _resp(200, "Ticker\n")])
     s.get("https://elite.finviz.com/export.ashx?v=152&t=AAPL&auth=SECRET123", expect_csv=True)
-    events = [json.loads(line) for line in log.read_text().splitlines()]
+    events = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
     assert len(events) == 1
     ev = events[0]
     assert (ev["app"], ev["provider"], ev["status"], ev["path"]) == ("tradekit", "finviz", 403, "/export.ashx")
     assert ev["detail"] == "attempt 1/2"
-    assert "SECRET123" not in log.read_text() and "AAPL" not in log.read_text()
+    assert "SECRET123" not in log.read_text(encoding="utf-8") and "AAPL" not in log.read_text(encoding="utf-8")
 
 
 def test_429_not_recorded(fake_http, monkeypatch, tmp_path):

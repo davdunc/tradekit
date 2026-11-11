@@ -23,12 +23,12 @@ class DataCache:
 
     def _load_meta(self) -> dict:
         if self._meta_path.exists():
-            with open(self._meta_path) as f:
+            with open(self._meta_path, encoding="utf-8") as f:
                 return json.load(f)
         return {}
 
     def _save_meta(self):
-        with open(self._meta_path, "w") as f:
+        with open(self._meta_path, "w", encoding="utf-8") as f:
             json.dump(self._meta, f, indent=2)
 
     def _cache_key(self, namespace: str, key: str) -> str:

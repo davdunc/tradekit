@@ -219,7 +219,10 @@ Everything else derives or matches:
 4. Reconcile the spec's `Requires:` against `pyproject.toml` dependencies, and its
    `Commands:` list against `tradekit --help`.
 5. Run the CI gates locally (see below).
-6. Tag `vX.Y.Z` and push. `release.yml` verifies the tag and publishes to PyPI.
+6. Tag `vX.Y.Z` and push. `release.yml` verifies the tag, builds the wheel and sdist,
+   and attaches them to the GitHub release (creating it from the CHANGELOG section if
+   needed). tradekit is **not** published to PyPI: the `tradekit` name there belongs
+   to an unrelated project (see [#30](https://github.com/davdunc/tradekit/issues/30)).
 7. COPR build from the tagged tarball.
 
 Semantic versioning. A new command or provider is a minor bump; a changed output
