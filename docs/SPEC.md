@@ -20,6 +20,8 @@ and how a release is cut.
 | **Cross-repo contracts with falcon / falcon-stats** | [`falcon-suite-compatibility.md`](falcon-suite-compatibility.md) — C1, C2, C3 and the version matrix |
 | **Why paths are XDG-based** | [`adr/0001-xdg-base-directories.md`](adr/0001-xdg-base-directories.md) |
 | **Emitted JSON shapes** | [`output-schema.md`](output-schema.md) |
+| **Position sizing rules (`tradekit size`)** | [`intents/position-sizing.md`](intents/position-sizing.md) and [`adr/0003-grade-based-position-sizing.md`](adr/0003-grade-based-position-sizing.md) |
+| **Market regime rules (`tradekit regime`)** | [`intents/market-regime.md`](intents/market-regime.md) |
 | **How to set up a dev environment** | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) |
 
 ### Non-goals
@@ -286,7 +288,7 @@ Recorded rather than hidden. Each is a rule above that nothing currently enforce
 | G1 | **`blotter` is documented but unreachable.** PR #2 advertises `tradekit blotter DATE`; `reports/blotter.py` ships; no `@cli.command()` registers it and `--help` does not list it. | `grep blotter src/tradekit/cli.py` returns nothing | Register the command, or remove the claim |
 | ~~G2~~ | ~~**Version stated in four places, all disagreeing.**~~ **Closed 2026-08-29.** `__version__` now derives from installed metadata; `pyproject.toml`, `packaging/tradekit.spec` and `CHANGELOG.md` all read 0.3.0. | `pyproject`/`spec`/`CHANGELOG` all 0.3.0; `tradekit.__version__` derived | Remaining: a CI check asserting the three files still agree — otherwise this reopens (see G4) |
 | G3 | **Import direction is documented, not enforced.** Nothing fails if `analysis` imports `data` tomorrow. | — | Add an import-direction test |
-| G4 | **RPM `Requires:` and `Commands:` drift silently** from `pyproject.toml` and `--help`. | matplotlib was missing; four commands were unlisted | Add a CI check comparing spec metadata to the tree |
+| G4 | **RPM `Requires:` drifts silently** from `pyproject.toml`. *`Commands:` half closed 2026-11-10:* `tests/test_packaging.py` fails when the `%description` list and `cli.commands` disagree (it caught `cards` and `gex` missing). | matplotlib was missing | Extend the test to compare `Requires:` with `pyproject.toml` dependencies |
 | G5 | **`cli.py` is 2,351 lines**, 38% of the codebase, and holds logic that belongs in `screener` and `reports`. | — | Extract incrementally; no new business logic in `cli.py` |
 | G6 | **mypy: 156 errors across 57 files.** | `mypy src/tradekit` | Ratchet, do not flip |
 | G7 | **`reports/html.py:323` imports a private helper** from `data.finviz` instead of the public `paths.trade_review_day_dir`. | `grep -n _trade_review_day_dir src/tradekit/reports/html.py` | Call the public function |
