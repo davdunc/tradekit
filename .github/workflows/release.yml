@@ -1,23 +1,36 @@
 name: Release
 
+# Builds the wheel + sdist for a version tag and attaches them to the GitHub release
+# (created from the tag's CHANGELOG section if it doesn't exist yet).
+#
+# Not published to PyPI: the `tradekit` name there belongs to an unrelated project.
+# Install from GitHub instead — see README "Installation" and issue #30 (rename).
+
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build and attach, e.g. v0.5.0"
+        required: true
+
+permissions:
+  contents: write  # create the release and upload assets
 
 jobs:
-  publish:
-    name: Publish to PyPI
+  release:
+    name: Build and attach to GitHub release
     runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/tradekit
-    permissions:
-      id-token: write  # trusted publishing
-      contents: read
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
@@ -27,8 +40,7 @@ jobs:
 
       - name: Verify tag matches package version
         run: |
-          TAG="${GITHUB_REF##*/}"
-          VERSION="v$(uv run python -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          VERSION="v$(uv run --no-project python -c 'import tomllib,pathlib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
           if [ "$TAG" != "$VERSION" ]; then
             echo "Tag $TAG does not match pyproject version $VERSION"
             exit 1
@@ -37,7 +49,12 @@ jobs:
       - name: Build
         run: uv build
 
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        # Requires trusted publisher configured at
-        # https://pypi.org/manage/project/tradekit/settings/publishing/
+      - name: Create or update GitHub release
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            # Release notes = this version's CHANGELOG section.
+            awk -v h="## [${TAG#v}]" 'index($0, h) == 1 {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md
+            gh release create "$TAG" dist/* --verify-tag --title "tradekit ${TAG#v}" --notes-file notes.md
+          fi
