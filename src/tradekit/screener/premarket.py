@@ -10,6 +10,7 @@ import pandas as pd
 from tradekit.config import Settings
 from tradekit.data.finviz import FinvizProvider
 from tradekit.data.yahoo import YahooProvider
+from tradekit.errors import EnrichmentError
 from tradekit.screener.filters import apply_filters, build_filter_chain
 
 if TYPE_CHECKING:
@@ -21,6 +22,27 @@ logger = logging.getLogger(__name__)
 # Seed-list liquidity floor (average daily shares). Below this a big % change is usually a
 # handful of off-hours shares, not a candidate.
 MIN_SEED_AVG_VOLUME = 100_000
+
+#: Candidates re-checked with ``get_quote`` before calling an empty enrichment a tool failure.
+ENRICHMENT_PROBE = 3
+
+
+def _sample(tickers: list[str], n: int = 8) -> str:
+    """``A, B, C (+5 more)`` for log lines, so the symbols actually attempted are visible."""
+    more = f" (+{len(tickers) - n} more)" if len(tickers) > n else ""
+    return ", ".join(tickers[:n]) + more
+
+
+def _resolves(provider: Any, ticker: str) -> bool:
+    """True if ``provider`` knows ``ticker``: a listed symbol always has a previous close."""
+    try:
+        quote = provider.get_quote(ticker) or {}
+    except Exception:  # noqa: BLE001 - any provider error means "did not resolve"
+        return False
+    try:
+        return float(quote.get("prev_close") or 0) > 0
+    except TypeError, ValueError:
+        return False
 
 
 def finviz_gainers(min_price: float, limit: int | None = 50) -> pd.DataFrame:
@@ -88,7 +110,7 @@ def scan_premarket(
         logger.warning("No candidates found from Finviz screener")
         return pd.DataFrame()
 
-    logger.info("Found %d Finviz candidates, enriching with market data...", len(tickers))
+    logger.info("Found %d Finviz candidates, enriching with market data: %s", len(tickers), _sample(tickers))
 
     # Step 2: Enrich with pre-market data from the chosen provider
     if provider is None:
@@ -96,7 +118,12 @@ def scan_premarket(
     premarket_data = provider.get_multiple_premarket(tickers)
 
     if not premarket_data:
-        logger.warning("No pre-market data retrieved")
+        # No pre-market rows can mean "no pre-market trades yet" (early, thin names) or "none of
+        # these symbols resolve" (#16's doubled tickers, an expired key, an outage). Only the
+        # second is a broken tool, so re-check a few candidates before calling it empty.
+        if not any(_resolves(provider, t) for t in tickers[:ENRICHMENT_PROBE]):
+            raise EnrichmentError(tickers)
+        logger.warning("No pre-market data retrieved: symbols resolve, but none has pre-market activity yet")
         return pd.DataFrame()
 
     df = pd.DataFrame(premarket_data)
@@ -146,9 +173,10 @@ def scan_previous_movers(
         logger.warning("No previous movers found from Finviz")
         return pd.DataFrame()
 
-    logger.info("Enriching %d candidates with market data...", len(tickers))
+    attempted = tickers[:20]
+    logger.info("Enriching %d candidates with market data: %s", len(attempted), _sample(attempted))
     rows = []
-    for ticker in tickers[:20]:
+    for ticker in attempted:
         try:
             quote = provider.get_quote(ticker)
             price = quote.get("price", 0)
@@ -182,7 +210,8 @@ def scan_previous_movers(
             logger.warning("Failed to fetch %s: %s", ticker, e)
 
     if not rows:
-        return pd.DataFrame()
+        # A row needs a quote with a previous close, so no rows means no candidate resolved.
+        raise EnrichmentError(attempted)
 
     df = pd.DataFrame(rows)
 

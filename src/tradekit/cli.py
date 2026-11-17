@@ -11,6 +11,7 @@ from rich.console import Console
 from tradekit.analysis.gex import DEFAULT_RATE as GEX_DEFAULT_RATE
 from tradekit.config import get_settings, now_et, shared_env_path
 from tradekit.data.finviz_http import FinvizThrottled, FinvizUnavailable
+from tradekit.errors import EnrichmentError
 from tradekit.paths import data_dir as tradekit_data_dir
 from tradekit.paths import debate_dir, group_snapshot
 
@@ -66,7 +67,11 @@ def _market_session() -> str:
 
 
 class _FinvizAwareGroup(click.Group):
-    """Report a Finviz throttle or unreadable screener as UNAVAILABLE (exit 3), never as an empty result."""
+    """Report a Finviz throttle, an unreadable screener or a dead data provider as UNAVAILABLE (exit 3).
+
+    Never as an empty result: a scanner that returns nothing because the tool is broken must
+    not look like a quiet tape (#16, #17).
+    """
 
     def invoke(self, ctx: click.Context):
         try:
@@ -83,6 +88,13 @@ class _FinvizAwareGroup(click.Group):
                 f"[red]Finviz unavailable: {e}.[/red]\n"
                 "[red]Results are UNAVAILABLE, not empty. The public-site scraper is only the fallback; "
                 "set FINVIZ_AUTH_TOKEN to use the Elite export instead.[/red]"
+            )
+            ctx.exit(3)
+        except EnrichmentError as e:
+            console.print(
+                f"[red]Market data unavailable: {e}.[/red]\n"
+                "[red]Results are UNAVAILABLE, not empty. Check the symbols listed and the data "
+                "provider (key, network, outage); changing scan thresholds will not help.[/red]"
             )
             ctx.exit(3)
 
