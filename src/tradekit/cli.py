@@ -3033,7 +3033,9 @@ def cards_publish(
     if dry_run:
         console.print(f"[yellow]--dry-run for {date}: rendered output only, nothing published[/yellow]\n")
         if not skip_reviews:
-            console.print(f"[dim]Private review would be written to {private_path}[/dim]\n")
+            # Plain echo: rich highlights the digits and wraps long paths, which splits the
+            # filename apart in a terminal (and broke this check in CI).
+            click.echo(f"Private review would be written to {private_path}\n")
         click.echo(public_text)
         return
 
