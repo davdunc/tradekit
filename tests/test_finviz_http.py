@@ -25,6 +25,7 @@ from tradekit.data.finviz_http import (
     BackoffPolicy,
     FinvizSession,
     FinvizThrottled,
+    FinvizUnavailable,
     RateLimiter,
     looks_like_html,
     redact,
@@ -326,6 +327,73 @@ def test_scraper_screen_reraises_throttle(monkeypatch):
     monkeypatch.setattr(finviz.Overview, "screener_view", boom)
     with pytest.raises(FinvizThrottled):
         finviz.FinvizProvider().get_top_gainers()
+
+
+# The screener page as Finviz served it on 2026-11-17 (trimmed): no HTML table; rows are drawn
+# client-side from embedded JSON, so the vendored table parser finds nothing to read.
+REDESIGNED_SCREENER_PAGE = """
+<html><head><title>Top Gainers - Stock Screener - Overview</title></head><body>
+<div role="row"><div role="gridcell" data-ticker="GP"><a class="fv-table_link">GP</a></div></div>
+<script>window.data = {"data":{"rows":[{"text":{"ticker":"GP","company":"GreenPower Motor Company Inc"},
+"numbers":{"price":2.32,"change":64.54}}]}};</script>
+</body></html>
+"""
+
+
+def _serve_page(monkeypatch, html: str) -> None:
+    """Make the vendored scraper's fetch return ``html`` (no network)."""
+    import finvizfinance.util as fv_util
+    from bs4 import BeautifulSoup
+
+    monkeypatch.setattr(fv_util, "web_scrap", lambda *a, **k: BeautifulSoup(html, "html.parser"))
+
+
+def test_scraper_unreadable_page_raises_unavailable(monkeypatch):
+    """#16/#17: a page the scraper can't parse is UNAVAILABLE, never an empty screen.
+
+    Unchecked, the vendored screener prints "No ticker found." and returns None for this page.
+    """
+    from tradekit.data import finviz
+
+    _serve_page(monkeypatch, REDESIGNED_SCREENER_PAGE)
+    with pytest.raises(FinvizUnavailable, match="no results table"):
+        finviz.FinvizProvider().get_top_gainers()
+
+
+def test_scraper_zero_result_screen_stays_empty(monkeypatch):
+    """A real zero-result screen still renders the table (header only): that is empty, not unavailable."""
+    from tradekit.data import finviz
+
+    _serve_page(
+        monkeypatch,
+        '<html><body><table class="screener_table"><tr><th>No.</th><th>Ticker</th></tr></table></body></html>',
+    )
+    assert finviz.FinvizProvider().get_top_gainers().empty
+
+
+def test_scraper_parse_error_raises_unavailable(monkeypatch):
+    from tradekit.data import finviz
+
+    def boom(self, *a, **k):
+        raise AttributeError("'NoneType' object has no attribute 'find_all'")
+
+    monkeypatch.setattr(finviz.Overview, "screener_view", boom)
+    with pytest.raises(FinvizUnavailable, match="public screener could not be read"):
+        finviz.FinvizProvider().get_top_gainers()
+
+
+def test_cli_reports_unreadable_screener_as_unavailable(monkeypatch):
+    from tradekit import cli as cli_mod
+    from tradekit.screener import premarket
+
+    def boom(**kwargs):
+        raise FinvizUnavailable("public screener could not be read (AttributeError: no table)")
+
+    monkeypatch.setattr(premarket, "scan_previous_movers", boom)
+    result = CliRunner().invoke(cli_mod.cli, ["second-day"])
+    assert result.exit_code == 3
+    assert "UNAVAILABLE" in result.output
+    assert "FINVIZ_AUTH_TOKEN" in result.output
 
 
 def test_cli_reports_throttle_as_unavailable(monkeypatch):

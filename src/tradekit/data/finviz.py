@@ -11,7 +11,12 @@ import requests
 from bs4 import BeautifulSoup
 from finvizfinance.screener.overview import Overview
 
-from tradekit.data.finviz_http import FinvizThrottled, finviz_get, install_on_vendored_scraper
+from tradekit.data.finviz_http import (
+    FinvizThrottled,
+    FinvizUnavailable,
+    finviz_get,
+    install_on_vendored_scraper,
+)
 from tradekit.paths import state_dir, trade_review_day_dir
 
 logger = logging.getLogger(__name__)
@@ -117,11 +122,11 @@ class FinvizProvider:
             if df is None or df.empty:
                 return pd.DataFrame()
             return df
-        except FinvizThrottled:
-            raise  # throttled is "unknown", not "no results"
+        except FinvizThrottled, FinvizUnavailable:
+            raise  # "unknown", not "no results"
         except Exception as e:
-            logger.warning("Finviz screener failed: %s", e)
-            return pd.DataFrame()
+            # A dead scraper must not look like a quiet tape (#16, #17).
+            raise FinvizUnavailable(f"public screener could not be read ({type(e).__name__}: {e})") from e
 
     def get_top_gainers(self, min_price: float = 5.0) -> pd.DataFrame:
         """Get today's top gaining stocks."""

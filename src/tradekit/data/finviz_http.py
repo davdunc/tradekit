@@ -53,6 +53,16 @@ class FinvizThrottled(RuntimeError):
         self.last = last
 
 
+class FinvizUnavailable(RuntimeError):
+    """The public Finviz screener answered, but tradekit could not read results from it.
+
+    The scraper fallback (used when ``FINVIZ_AUTH_TOKEN`` is unset) parses Finviz's screener
+    HTML, and Finviz changes that page without notice: in 2026-11 it moved to
+    ``/screener/stocks`` and stopped rendering an HTML table. A parse failure means "unknown",
+    never "no candidates", so it is raised rather than turned into an empty result.
+    """
+
+
 @dataclass(frozen=True)
 class BackoffPolicy:
     """Delay before retry *n* (1-based) = min(cap, base * factor**(n-1)), plus up to ``jitter`` × that."""
@@ -222,16 +232,35 @@ def finviz_get(url: str, *, expect_csv: bool = False, timeout: float = 15, **kwa
     return resp
 
 
+def _checked_screener_scrap(url, params=None):
+    """``web_scrap`` for screener pages that refuses a page with no results table.
+
+    The vendored screener reads "no page selector" as "no tickers" and returns ``None``, so a
+    page it cannot parse at all looks exactly like a quiet market (#16, #17). A real zero-result
+    screen still renders the table (header row only); a page without it is UNAVAILABLE.
+    """
+    import finvizfinance.util as fv_util
+
+    soup = fv_util.web_scrap(url, params)
+    if soup.find("table", class_="screener_table") is None:
+        raise FinvizUnavailable(f"no results table on {redact(url)} (Finviz changed the screener page)")
+    return soup
+
+
 def install_on_vendored_scraper() -> None:
-    """Route the vendored ``finvizfinance`` scraper through the shared session.
+    """Route the vendored ``finvizfinance`` scraper through the shared session, and check its pages.
 
     Its ``web_scrap`` reads the module-global ``finvizfinance.util.session``; replacing that one
-    object puts the public-site fallback under the same limiter and backoff without editing
-    vendored source.
+    object puts the public-site fallback under the same limiter and backoff. The screener module's
+    own ``web_scrap`` reference is swapped for ``_checked_screener_scrap``. No vendored source is
+    edited.
     """
     try:
+        import finvizfinance.screener.base as fv_screener
         import finvizfinance.util as fv_util
     except ImportError:  # pragma: no cover
         return
     if not isinstance(fv_util.session, FinvizSession):
         fv_util.session = session()
+    if fv_screener.web_scrap is not _checked_screener_scrap:
+        fv_screener.web_scrap = _checked_screener_scrap
