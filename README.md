@@ -178,6 +178,27 @@ uv run mypy src/tradekit
 
 ---
 
+## Claude Code GitHub Actions
+
+Two workflows run [Claude Code][claude-action] on this repository:
+
+- **`@claude` on demand** (`.github/workflows/claude.yml`): mention `@claude` in an
+  issue, a PR comment, a review comment or a submitted review (or in an issue's title
+  or body when it's opened or assigned), and Claude acts on the request: answers a
+  question, explains code, or makes a change. It can read CI results, so you can ask
+  it about a failing check. Only users with write access to the repository can
+  trigger it.
+- **Automatic PR review** (`.github/workflows/claude-code-review.yml`): when a pull
+  request is opened, reopened, marked ready for review or updated, Claude reviews it
+  and posts findings as inline comments.
+
+Both authenticate with the `CLAUDE_CODE_OAUTH_TOKEN` repository secret and the Claude
+GitHub App. GitHub doesn't pass secrets to workflows triggered from forks, so on pull
+requests from forks the review check fails rather than running; maintainers can ask
+for a review with an `@claude` comment instead.
+
+---
+
 ## Acknowledgments
 
 This project is built to integrate with [Daniel Miessler's LifeOS][pai] (formerly
@@ -191,6 +212,7 @@ Trading methodology draws on [SMB Capital][smb]'s published playbook material
 [pai]: https://github.com/danielmiessler/LifeOS
 [smb]: https://www.smbtraining.com/
 [uv]: https://github.com/astral-sh/uv
+[claude-action]: https://github.com/anthropics/claude-code-action
 
 ---
 
