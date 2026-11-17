@@ -1,6 +1,7 @@
 """#18: a fresh install must say why accounts are UNMAPPED, and `init` must offer the fix."""
 
 import logging
+import os
 import re
 import stat
 
@@ -10,6 +11,13 @@ from click.testing import CliRunner
 from tradekit import cli as cli_mod
 from tradekit.reporting import ingest
 from tradekit.reporting.schema import AccountKind
+
+
+def _assert_owner_only(path) -> None:
+    """0600 on POSIX. Windows has no POSIX mode bits (st_mode reports 0666); the file is
+    protected there by the ACLs of the user's profile directory instead."""
+    if os.name == "posix":
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
 
 
 def _stat(account: str) -> dict:
@@ -61,7 +69,7 @@ def test_fully_mapped_accounts_do_not_warn(fresh_install, monkeypatch, caplog):
 def test_write_accounts_config_round_trips_with_owner_only_mode(fresh_install):
     path = ingest.write_accounts_config({"BBB": AccountKind.SIM, "AAA": AccountKind.LIVE})
     assert path == fresh_install
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    _assert_owner_only(path)
     assert ingest.default_account_kinds() == {"AAA": AccountKind.LIVE, "BBB": AccountKind.SIM}
 
 
@@ -90,7 +98,7 @@ def test_init_offers_and_writes_accounts_toml(fresh_install, tmp_path):
     result = _init(tmp_path, keys + "AAA=LIVE, BBB=sim\n")
     assert result.exit_code == 0, result.output
     assert "not configured" in _plain(result.output)
-    assert stat.S_IMODE(fresh_install.stat().st_mode) == 0o600
+    _assert_owner_only(fresh_install)
     assert ingest.default_account_kinds() == {"AAA": AccountKind.LIVE, "BBB": AccountKind.SIM}
 
 

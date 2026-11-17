@@ -1834,7 +1834,8 @@ def _prompt_account_mapping() -> None:
     except FileExistsError as e:
         console.print(f"[yellow]{e} already exists; not overwritten.[/yellow]")
         return
-    console.print(f"[bold green]✓ Wrote {len(kinds)} account(s) to {path} (mode 600)[/bold green]")
+    mode = " (mode 600)" if os.name == "posix" else ""  # Windows has no POSIX mode bits
+    console.print(f"[bold green]✓ Wrote {len(kinds)} account(s) to {path}{mode}[/bold green]")
 
 
 @cli.command()
