@@ -206,24 +206,30 @@ Everything else derives or matches:
 | Location | Rule |
 |---|---|
 | `pyproject.toml` `project.version` | **Authoritative** |
-| `src/tradekit/__init__.py` `__version__` | **Derived** via `importlib.metadata.version("tradekit")`. Never hand-maintained |
-| `packaging/tradekit.spec` `Version:` | Must equal the tag `Source0` points at |
+| `src/tradekit/__init__.py` `__version__` | **Derived** via `importlib.metadata.version("tradekit-cli")` (falling back to the pre-#30 `"tradekit"`). Never hand-maintained |
+| `packaging/tradekit-cli.spec` `Version:` | Must equal the tag `Source0` points at |
 | Git tag `vX.Y.Z` | Must equal `project.version` |
 
 ### Release checklist
 
 1. `CHANGELOG.md` — move `[Unreleased]` into a dated version section.
 2. Bump `project.version` in `pyproject.toml`.
-3. Bump `Version:` in `packaging/tradekit.spec`, reset `Release:` to `1%{?dist}`,
+3. Bump `Version:` in `packaging/tradekit-cli.spec`, reset `Release:` to `1%{?dist}`,
    add a `%changelog` entry.
 4. Reconcile the spec's `Requires:` against `pyproject.toml` dependencies, and its
    `Commands:` list against `tradekit --help`.
 5. Run the CI gates locally (see below).
 6. Tag `vX.Y.Z` and push. `release.yml` verifies the tag, builds the wheel and sdist,
-   and attaches them to the GitHub release (creating it from the CHANGELOG section if
-   needed). tradekit is **not** published to PyPI: the `tradekit` name there belongs
-   to an unrelated project (see [#30](https://github.com/davdunc/tradekit/issues/30)).
+   attaches them to the GitHub release (creating it from the CHANGELOG section if
+   needed), then publishes them to PyPI as **`tradekit-cli`** through trusted
+   publishing. The distribution was renamed from `tradekit`, which on PyPI belongs to
+   an unrelated project ([#30](https://github.com/davdunc/tradekit/issues/30)); the
+   command and import package are still `tradekit`.
 7. COPR build from the tagged tarball.
+
+**One-time PyPI setup** (before the first `tradekit-cli` release): on pypi.org, add a
+*pending trusted publisher* for project `tradekit-cli`, owner `davdunc`, repository
+`tradekit`, workflow `release.yml`, environment `pypi`.
 
 Semantic versioning. A new command or provider is a minor bump; a changed output
 schema or moved contract path is a major one.

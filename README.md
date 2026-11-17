@@ -44,12 +44,18 @@ or as the data engine for a [LifeOS][pai] pack (formerly Personal AI Infrastruct
 Requires Python 3.14+ and [`uv`][uv].
 
 ```bash
-# From a cloned working copy:
-uv pip install -e .
+# From PyPI (from the first release after the rename; see below):
+uv tool install tradekit-cli
 
 # Or directly from GitHub:
 uv tool install git+https://github.com/davdunc/tradekit
+
+# Or from a cloned working copy:
+uv pip install -e .
 ```
+
+The package is **`tradekit-cli`** on PyPI; the command it installs is `tradekit`.
+**Don't `pip install tradekit`**: that name belongs to an unrelated project (#30).
 
 ### Windows
 
@@ -98,9 +104,21 @@ head -3 "$(command -v tradekit)"     # a shell script → a hand-written shim
 
 | Install shape | How to tell | Upgrade |
 |---|---|---|
-| **uv tool from GitHub** | `uv tool list` shows tradekit | `uv tool upgrade tradekit` |
-| **uv tool from a checkout** | `uv tool list` shows tradekit | in your checkout: `git pull && uv tool install --force .` |
+| **uv tool from PyPI or GitHub** | `uv tool list` shows tradekit-cli | `uv tool upgrade tradekit-cli` |
+| **uv tool from a checkout** | `uv tool list` shows tradekit-cli | in your checkout: `git pull && uv tool install --force .` |
 | **Editable venv + shim** | `uv tool list` is empty; `tradekit` is a script that `exec`s `<checkout>/.venv/bin/tradekit` | in your checkout: `git pull && uv sync` |
+
+**Once, for installs from before the rename (#30).** If `uv tool list` shows plain
+`tradekit`, that tool was installed under the old distribution name, and `uv tool upgrade
+tradekit` can't follow the rename. Reinstall it under the new name:
+
+```bash
+uv tool uninstall tradekit
+uv tool install git+https://github.com/davdunc/tradekit   # or: uv tool install tradekit-cli
+```
+
+Editable venvs need nothing extra: `uv sync` swaps the old distribution for the new one,
+and a shim pointing at `<checkout>/.venv/bin/tradekit` keeps working.
 
 Two things to watch:
 

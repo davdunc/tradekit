@@ -2,11 +2,16 @@
 
 This directory contains Fedora/RPM packaging artifacts for tradekit.
 
+The RPM is named **`tradekit-cli`**, matching the Python distribution (`tradekit` on PyPI
+is an unrelated project, #30). The command, config paths and units are still `tradekit`,
+and the spec `Provides: tradekit`, so `dnf install tradekit` and upgrades from the old
+package keep working.
+
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `tradekit.spec` | RPM spec — `rpmbuild -ba` source. Targets Fedora 44+ (Python 3.14). |
+| `tradekit-cli.spec` | RPM spec — `rpmbuild -ba` source. Targets Fedora 44+ (Python 3.14). |
 | `tradekit.conf.example` | Default config skeleton, installed to `/etc/tradekit/`. |
 | `tradekit-groups-daily.service` | systemd user service: runs `tradekit groups --diff auto`. |
 | `tradekit-groups-daily.timer` | systemd user timer: 22:45 UTC daily (post US close). |
@@ -20,14 +25,15 @@ sudo dnf install -y rpm-build rpmdevtools rpm-build-python pyproject-rpm-macros
 # 2. Set up rpmbuild tree (one-time)
 rpmdev-setuptree
 
-# 3. Create source tarball matching Source0 in the spec (for v0.1.0)
-git archive --prefix=tradekit-0.1.0/ -o ~/rpmbuild/SOURCES/tradekit-0.1.0.tar.gz HEAD
+# 3. Create source tarball matching Source0 in the spec (for v0.5.0). The file is named
+#    after the package, but its top directory after the repo, as GitHub's tarball is.
+git archive --prefix=tradekit-0.5.0/ -o ~/rpmbuild/SOURCES/tradekit-cli-0.5.0.tar.gz HEAD
 
 # 4. Build
-rpmbuild -ba packaging/tradekit.spec
+rpmbuild -ba packaging/tradekit-cli.spec
 
 # 5. Install the result
-sudo dnf install ~/rpmbuild/RPMS/noarch/tradekit-0.1.0-1.fc44.noarch.rpm
+sudo dnf install ~/rpmbuild/RPMS/noarch/tradekit-cli-0.5.0-1.fc44.noarch.rpm
 ```
 
 Verify:
@@ -68,13 +74,13 @@ copr-cli build davdunc/tradekit \
 ### Auto-build on git push (optional, requires .copr.yml)
 
 When ready to automate, add `.copr.yml` at the repo root pointing the Webhook
-build to `packaging/tradekit.spec`. COPR will rebuild on every push or tag.
+build to `packaging/tradekit-cli.spec`. COPR will rebuild on every push or tag.
 
 ### User install via COPR
 
 ```bash
 sudo dnf copr enable davdunc/tradekit
-sudo dnf install tradekit
+sudo dnf install tradekit-cli     # `dnf install tradekit` also works (Provides: tradekit)
 ```
 
 ## Why no `/etc/profile.d/tradekit.sh`?

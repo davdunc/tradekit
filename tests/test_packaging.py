@@ -7,13 +7,13 @@ from pathlib import Path
 
 from tradekit.cli import cli
 
-SPEC = Path(__file__).resolve().parents[1] / "packaging" / "tradekit.spec"
+SPEC = Path(__file__).resolve().parents[1] / "packaging" / "tradekit-cli.spec"
 
 
 def _spec_commands() -> set[str]:
     text = SPEC.read_text()
     m = re.search(r"^Commands:(.*?)\.\s*$", text, re.S | re.M)
-    assert m, "packaging/tradekit.spec has no 'Commands:' list in %description"
+    assert m, "packaging/tradekit-cli.spec has no 'Commands:' list in %description"
     return {c.strip() for c in m.group(1).replace("\n", " ").split(",") if c.strip()}
 
 

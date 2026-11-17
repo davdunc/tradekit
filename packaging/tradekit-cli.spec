@@ -4,10 +4,14 @@
 # Targets Fedora 44+ which ships Python 3.14.
 #
 # Build:
-#   rpmbuild -ba packaging/tradekit.spec
+#   rpmbuild -ba packaging/tradekit-cli.spec
 #
 # COPR build (after `copr-cli` configured):
-#   copr-cli build davdunc/tradekit packaging/tradekit.spec
+#   copr-cli build davdunc/tradekit packaging/tradekit-cli.spec
+#
+# Package name: tradekit-cli, matching the Python distribution (#30: `tradekit` on
+# PyPI is an unrelated project). The command and import package are still `tradekit`.
+# Provides/Obsoletes below upgrade existing `tradekit` installs in place.
 #
 # Bundled libraries (Provides: bundled below): finvizfinance and ta are vendored
 # at src/tradekit/_vendor/ because they are not yet packaged in Fedora repos.
@@ -17,7 +21,7 @@
 # NOTE: Source0 resolves to the v%%{version} git tag. Tag the release before
 # building — a Version here with no matching tag produces an unbuildable spec.
 
-Name:           tradekit
+Name:           tradekit-cli
 Version:        0.5.0
 Release:        1%{?dist}
 Summary:        Pre-market screening, technical analysis, and trade setup evaluation
@@ -25,6 +29,10 @@ Summary:        Pre-market screening, technical analysis, and trade setup evalua
 License:        MIT
 URL:            https://github.com/davdunc/tradekit
 Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
+
+# Renamed from `tradekit` (#30).
+Provides:       tradekit = %{version}-%{release}
+Obsoletes:      tradekit < %{version}-%{release}
 
 BuildArch:      noarch
 
@@ -77,7 +85,8 @@ paths are shared contracts with the rest of the Falcon suite and tolerate both
 XDG and legacy locations; see docs/falcon-suite-compatibility.md.
 
 %prep
-%autosetup -p1
+# The GitHub tarball unpacks to <repo>-<version>, and the repo is still `tradekit`.
+%autosetup -p1 -n tradekit-%{version}
 
 
 %generate_buildrequires
