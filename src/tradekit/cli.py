@@ -13,7 +13,8 @@ from tradekit.config import get_settings, now_et, shared_env_path
 from tradekit.data.finviz_http import FinvizThrottled, FinvizUnavailable
 from tradekit.errors import EnrichmentError
 from tradekit.paths import data_dir as tradekit_data_dir
-from tradekit.paths import debate_dir, group_snapshot
+from tradekit.paths import debate_dir, group_snapshot, review_file
+from tradekit.paths import reviews_dir as reviews_dir_default
 
 console = Console(force_terminal=True)
 logger = logging.getLogger("tradekit")
@@ -2952,7 +2953,11 @@ def _publish_card_to_pnl_tracker(card, *, data_source_id: str) -> None:
     "--reviews-dir",
     type=click.Path(file_okay=False, path_type=Path),
     default=None,
-    help="Write the full private review (with $ amounts + behavioral contract) as REVIEW-<date>.md here.",
+    help=(
+        "Directory for the full private review (with $ amounts + behavioral contract), written as "
+        "<date>-review.md. Default: the canonical Reviews directory ($TRADEKIT_REVIEWS_DIR, else the "
+        "LifeOS trading Reviews dir if present, else ~/.local/share/trading-reviews)."
+    ),
 )
 @click.option("--slack-channel", default=_DEFAULT_SLACK_CHANNEL, help="Slack channel id for the public post.")
 @click.option("--slack-thread", default=None, help="Reply into this thread ts instead of posting fresh.")
@@ -2967,6 +2972,7 @@ def _publish_card_to_pnl_tracker(card, *, data_source_id: str) -> None:
 @click.option("--skip-slack", is_flag=True, help="Skip the Slack post.")
 @click.option("--skip-notion", is_flag=True, help="Skip the Notion EOD Review append.")
 @click.option("--skip-pnl-tracker", is_flag=True, help="Skip the Daily PNL Tracker entry.")
+@click.option("--skip-reviews", is_flag=True, help="Skip the private Reviews file.")
 @click.option("--dry-run", is_flag=True, help="Render every target and print it; publish nothing.")
 def cards_publish(
     date: str | None,
@@ -2982,12 +2988,14 @@ def cards_publish(
     skip_slack: bool,
     skip_notion: bool,
     skip_pnl_tracker: bool,
+    skip_reviews: bool,
     dry_run: bool,
 ):
     """Publish a stored daily card to every deterministic target in one step.
 
     Loads the DailyReportCard already written by 'cards ingest' for DATE, then
-    fires the private Reviews file (if --reviews-dir given), Slack, the Notion
+    fires the private Reviews file (<date>-review.md in the canonical Reviews
+    directory, or --reviews-dir), Slack, the Notion
     EOD Review section, and the Daily PNL Tracker entry. Per HARD RULE 4, this
     command does not ask for confirmation and has no "publish y/n" mode —
     pass --skip-* flags or --dry-run if a target genuinely shouldn't fire.
@@ -3020,14 +3028,17 @@ def cards_publish(
     }
     public_text = render_public_summary(card, configs)
 
+    private_path = review_file(date, "review", root=reviews_dir or reviews_dir_default())
+
     if dry_run:
         console.print(f"[yellow]--dry-run for {date}: rendered output only, nothing published[/yellow]\n")
+        if not skip_reviews:
+            console.print(f"[dim]Private review would be written to {private_path}[/dim]\n")
         click.echo(public_text)
         return
 
-    if reviews_dir is not None:
-        reviews_dir.mkdir(parents=True, exist_ok=True)
-        private_path = reviews_dir / f"REVIEW-{date}.md"
+    if not skip_reviews:
+        private_path.parent.mkdir(parents=True, exist_ok=True)
         private_path.write_text(render_daily_card(card), encoding="utf-8")
         console.print(f"[green]✓ Private review written to {private_path}[/green]")
 

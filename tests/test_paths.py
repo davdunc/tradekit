@@ -13,6 +13,7 @@ OVERRIDE_VARS = (
     "TRADEKIT_STATE_DIR",
     "FALCON_DB",
     "TRADE_REVIEW_PATH",
+    "TRADEKIT_REVIEWS_DIR",
 )
 
 
@@ -31,6 +32,7 @@ def no_legacy(monkeypatch, tmp_path):
     monkeypatch.setattr(paths, "LEGACY_CACHE_DIR", missing / ".tradekit" / "cache")
     monkeypatch.setattr(paths, "LEGACY_FALCON_DB", missing / ".falcon" / "falcon.db")
     monkeypatch.setattr(paths, "LEGACY_TRADE_REVIEW_DIRS", (missing / "Trade_Review",))
+    monkeypatch.setattr(paths, "LIFEOS_REVIEWS_DIR", missing / "LifeOS" / "USER" / "TRADING" / "Reviews")
 
 
 # --- base directory resolution ----------------------------------------------
@@ -176,3 +178,41 @@ def test_falcon_reader_resolves_default_per_instance(monkeypatch, tmp_path, no_l
     assert FalconReader().db_path == tmp_path / "a.db"
     monkeypatch.setenv("FALCON_DB", str(tmp_path / "b.db"))
     assert FalconReader().db_path == tmp_path / "b.db"
+
+
+# --- reviews_dir (contract C4, #20) -----------------------------------------
+
+
+def test_reviews_dir_defaults_to_xdg(monkeypatch, tmp_path, no_legacy):
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    assert paths.reviews_dir() == tmp_path / "data" / "trading-reviews"
+
+
+def test_reviews_dir_env_override_wins(monkeypatch, tmp_path, no_legacy):
+    monkeypatch.setenv("TRADEKIT_REVIEWS_DIR", str(tmp_path / "mine"))
+    assert paths.reviews_dir() == tmp_path / "mine"
+
+
+def test_reviews_dir_uses_existing_lifeos_dir(monkeypatch, tmp_path, no_legacy):
+    """A machine running the LifeOS trading skill keeps writing where the skill reads."""
+    lifeos = tmp_path / "LifeOS" / "USER" / "TRADING" / "Reviews"
+    lifeos.mkdir(parents=True)
+    monkeypatch.setattr(paths, "LIFEOS_REVIEWS_DIR", lifeos)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    assert paths.reviews_dir() == lifeos
+
+
+def test_reviews_dir_existing_xdg_wins_over_lifeos(monkeypatch, tmp_path, no_legacy):
+    lifeos = tmp_path / "LifeOS" / "USER" / "TRADING" / "Reviews"
+    lifeos.mkdir(parents=True)
+    xdg = tmp_path / "data" / "trading-reviews"
+    xdg.mkdir(parents=True)
+    monkeypatch.setattr(paths, "LIFEOS_REVIEWS_DIR", lifeos)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    assert paths.reviews_dir() == xdg
+
+
+def test_review_file_is_lowercase_iso_date_first(tmp_path):
+    """ReportingSchema Rule 7: <YYYY-MM-DD>-<kind>.md, never REVIEW-<date>.md."""
+    assert paths.review_file("2026-10-02", root=tmp_path) == tmp_path / "2026-10-02-review.md"
+    assert paths.review_file("2026-10-02", "GAMEPLAN", root=tmp_path) == tmp_path / "2026-10-02-gameplan.md"
