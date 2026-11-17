@@ -1767,6 +1767,7 @@ def init(env_file: Path | None, non_interactive: bool):
         val = current.get(key, "")
         display = "[dim]unset[/dim]" if not val else f"[green]set[/green] ({len(val)} chars)"
         console.print(f"  {key}: {display}")
+    accounts_configured = _print_account_mapping_status()
 
     if non_interactive:
         console.print("\n[dim]--non-interactive: skipping prompts.[/dim]")
@@ -1786,13 +1787,54 @@ def init(env_file: Path | None, non_interactive: bool):
         if value:
             updates[key] = value
 
-    if not updates:
-        console.print("\n[yellow]No changes made.[/yellow]")
-        return
+    if updates:
+        _upsert_env_file(target, updates)
+        console.print(f"\n[bold green]✓ Wrote {len(updates)} key(s) to {target}[/bold green]")
+        console.print("[dim]Restart any running tradekit processes to pick up the new values.[/dim]")
+    else:
+        console.print("\n[yellow]No .env changes made.[/yellow]")
 
-    _upsert_env_file(target, updates)
-    console.print(f"\n[bold green]✓ Wrote {len(updates)} key(s) to {target}[/bold green]")
-    console.print("[dim]Restart any running tradekit processes to pick up the new values.[/dim]")
+    if not accounts_configured:
+        _prompt_account_mapping()
+
+
+def _print_account_mapping_status() -> bool:
+    """Show where the LIVE/SIM account mapping comes from; True if one is configured (#18)."""
+    from tradekit.paths import accounts_config
+    from tradekit.reporting.ingest import ACCOUNT_KINDS_ENV, default_account_kinds
+
+    path = accounts_config()
+    console.print("\n[bold]Account mapping[/bold] (broker account → LIVE/SIM):")
+    if os.environ.get(ACCOUNT_KINDS_ENV):
+        console.print(f"  ${ACCOUNT_KINDS_ENV}: [green]set[/green] ({len(default_account_kinds())} accounts)")
+        return True
+    if path.exists():
+        console.print(f"  {path}: [green]present[/green] ({len(default_account_kinds())} accounts)")
+        return True
+    console.print(f"  [yellow]not configured[/yellow]: reports will label every account UNMAPPED. Writes {path}.")
+    return False
+
+
+def _prompt_account_mapping() -> None:
+    """Offer to write accounts.toml on a fresh install, where reports would otherwise be all UNMAPPED."""
+    from tradekit.reporting.ingest import _parse_account_kinds, write_accounts_config
+
+    raw = click.prompt(
+        "  Broker accounts as ID=LIVE or ID=SIM, comma-separated (Enter to skip)",
+        default="",
+        show_default=False,
+    )
+    kinds = _parse_account_kinds(raw)
+    if not kinds:
+        if raw.strip():
+            console.print("[yellow]No valid ID=LIVE or ID=SIM pairs; accounts.toml not written.[/yellow]")
+        return
+    try:
+        path = write_accounts_config(kinds)
+    except FileExistsError as e:
+        console.print(f"[yellow]{e} already exists; not overwritten.[/yellow]")
+        return
+    console.print(f"[bold green]✓ Wrote {len(kinds)} account(s) to {path} (mode 600)[/bold green]")
 
 
 @cli.command()

@@ -19,8 +19,11 @@ review workflow assembles.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import tomllib
+from pathlib import Path
 
 from tradekit.paths import accounts_config
 from tradekit.reporting.grading import DisciplineScore, Grade, discipline_from_flags
@@ -34,7 +37,12 @@ from tradekit.reporting.schema import (
     TradeRecord,
 )
 
+logger = logging.getLogger(__name__)
+
 ACCOUNT_KINDS_ENV = "TRADEKIT_ACCOUNT_KINDS"
+
+# One warning per process, not one per row: a report with ten trades should say it once.
+_warned_unmapped: set[str] = set()
 
 #: Deprecated. Kept so existing imports keep working; it is no longer consulted.
 #: It was an empty dict that silently made every account resolve to LIVE.
@@ -98,6 +106,58 @@ def default_account_kinds() -> dict[str, AccountKind]:
     return out
 
 
+def _warn_unmapped(account: str, kinds: dict[str, AccountKind]) -> None:
+    """Say why an account renders as UNMAPPED and how to fix it, once per process (#18).
+
+    An empty mapping is the fresh-install case: nothing was ever configured, and every
+    account in every report is UNMAPPED. A non-empty mapping missing one account is usually
+    a new or renamed broker account.
+    """
+    if not account:
+        return
+    if not kinds:
+        if "" in _warned_unmapped:
+            return
+        _warned_unmapped.add("")
+        logger.warning(
+            "No account → LIVE/SIM mapping is configured, so accounts are reported as UNMAPPED "
+            '(first: %s). Set $%s (e.g. "ID=LIVE,ID2=SIM") or run `tradekit init` to write %s.',
+            account,
+            ACCOUNT_KINDS_ENV,
+            accounts_config(),
+        )
+    elif account not in _warned_unmapped:
+        _warned_unmapped.add(account)
+        logger.warning(
+            "Account %s is not in the LIVE/SIM mapping and is reported as UNMAPPED. Add it to $%s or %s.",
+            account,
+            ACCOUNT_KINDS_ENV,
+            accounts_config(),
+        )
+
+
+def write_accounts_config(kinds: dict[str, AccountKind], path: Path | None = None) -> Path:
+    """Write the ``[accounts]`` mapping to ``accounts_config()``, readable by the owner only.
+
+    Refuses to overwrite an existing file: it may hold accounts this caller doesn't know about.
+    Broker account ids are personal identifiers, hence ``0600`` and a path outside the repo.
+    """
+    path = path or accounts_config()
+    if path.exists():
+        raise FileExistsError(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        "# Broker account id -> book kind (LIVE or SIM). Local only; never commit this file.",
+        "[accounts]",
+        *(f"{json.dumps(account)} = {json.dumps(kind.value)}" for account, kind in sorted(kinds.items())),
+    ]
+    # Create with 0600 from the start so the ids are never briefly world-readable.
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
+    return path
+
+
 # Tolerant field aliases for the falcon per-account stat object. First match wins.
 _FALCON_ALIASES: dict[str, tuple[str, ...]] = {
     "account": ("account", "account_id", "acct", "accid", "ACCID"),
@@ -146,6 +206,8 @@ def account_pnl_from_falcon(stat: dict, account_kinds: dict[str, AccountKind] | 
         # No silent LIVE default: an unmapped account guessed as LIVE is how a SIM
         # book gets reported against live risk. Unknown stays unknown.
         kind = kinds.get(account)
+        if kind is None:
+            _warn_unmapped(account, kinds)
 
     round_trips = int(_g(stat, "round_trips", 0) or 0)
     wins = _g(stat, "wins")
@@ -198,6 +260,8 @@ def trade_from_dict(d: dict, account_kinds: dict[str, AccountKind] | None = None
     account = str(d.get("account", "")).strip()
     account_kind = d.get("account_kind") or d.get("kind")
     kind = AccountKind(str(account_kind).upper()) if account_kind else kinds.get(account)
+    if kind is None:
+        _warn_unmapped(account, kinds)
 
     return TradeRecord(
         ticker=str(d.get("ticker", "")),

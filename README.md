@@ -83,7 +83,44 @@ tradekit init
 
 `tradekit init` will detect your LifeOS directory (`$PAI_DIR` or `~/.claude/.env`),
 prompt for any missing API keys, and write them to the shared `.env` so every
-LifeOS pack picks them up.
+LifeOS pack picks them up. It also offers to write the account mapping
+(see [Account mapping](#account-mapping)).
+
+### Upgrading an existing machine
+
+First check **how this machine runs tradekit**. The upgrade command depends on it, and
+the wrong one can silently break a working install:
+
+```bash
+uv tool list | grep tradekit         # listed → installed with `uv tool install`
+head -3 "$(command -v tradekit)"     # a shell script → a hand-written shim
+```
+
+| Install shape | How to tell | Upgrade |
+|---|---|---|
+| **uv tool from GitHub** | `uv tool list` shows tradekit | `uv tool upgrade tradekit` |
+| **uv tool from a checkout** | `uv tool list` shows tradekit | in your checkout: `git pull && uv tool install --force .` |
+| **Editable venv + shim** | `uv tool list` is empty; `tradekit` is a script that `exec`s `<checkout>/.venv/bin/tradekit` | in your checkout: `git pull && uv sync` |
+
+Two things to watch:
+
+- **Checkout paths differ between machines.** Run the commands from wherever *this*
+  machine's checkout lives (`~/src/tradekit`, `~/Projects/Falcon/tradekit`, …) rather than
+  pasting a path from another machine. A pasted `cd` that fails leaves the node quietly
+  behind.
+- **`uv tool install --force` replaces `~/.local/bin/tradekit`.** On a machine that uses a
+  shim, that throws the shim away, along with any environment it sets. For example a shim
+  like this one exists to set `AWS_PROFILE`:
+
+  ```bash
+  #!/usr/bin/env bash
+  exec env AWS_PROFILE=falcon-stats ~/Projects/Falcon/tradekit/.venv/bin/tradekit "$@"
+  ```
+
+  After a `--force` install, AWS commands silently use the default profile. Keep
+  shim machines on `uv sync`. Environment like `AWS_PROFILE` belongs in the shim, not
+  in `.env`: tradekit's `.env` files configure tradekit's settings but are not exported
+  to libraries such as boto3.
 
 ---
 
@@ -102,6 +139,25 @@ Environment files are loaded in this precedence order (last wins):
 4. `./.env` — project-local
 
 See [`.env.example`](.env.example) for the full variable list.
+
+### Account mapping
+
+Reports label each broker account LIVE or SIM. The mapping is personal, so it is never
+in the repository; it comes from, first hit wins:
+
+1. `$TRADEKIT_ACCOUNT_KINDS`, e.g. `"ACCT1=LIVE,ACCT2=SIM"`
+2. `~/.config/tradekit/accounts.toml` (`$XDG_CONFIG_HOME/tradekit/accounts.toml`):
+
+   ```toml
+   # chmod 600, local only, never committed
+   [accounts]
+   "ACCT1" = "LIVE"
+   "ACCT2" = "SIM"
+   ```
+
+`tradekit init` offers to write that file. With neither configured, every account is
+reported as `UNMAPPED` (never guessed as LIVE), and the reporting commands log a warning
+naming both options.
 
 ---
 
