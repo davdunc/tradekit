@@ -390,11 +390,61 @@ class TestCardsPublish:
             ]
         )
         assert result.exit_code == 0
-        private_text = (reviews_dir / "REVIEW-2026-09-15.md").read_text(encoding="utf-8")
+        private_text = (reviews_dir / "2026-09-15-review.md").read_text(encoding="utf-8")
         # The private file DOES carry $ amounts and the behavioral contract —
         # only the public targets are stripped.
         assert "$-95.40" in private_text or "$-131.20" in private_text
         assert "locked for the rest of this week" in private_text
+        assert not (reviews_dir / "REVIEW-2026-09-15.md").exists()  # old name (#20)
+
+    def _ingest(self, store_root, falcon_stats_file, narrative_file):
+        _run(
+            [
+                "cards",
+                "ingest",
+                "--falcon-stats",
+                str(falcon_stats_file),
+                "--narrative",
+                str(narrative_file),
+                "2026-09-15",
+                "--store",
+                str(store_root),
+            ]
+        )
+
+    def test_reviews_dir_defaults_to_canonical_location(
+        self, tmp_path, falcon_stats_file, narrative_file, monkeypatch, isolated_reviews_dir
+    ):
+        """#20: omitting --reviews-dir writes to paths.reviews_dir(), not nowhere."""
+        store_root = tmp_path / "store"
+        self._ingest(store_root, falcon_stats_file, narrative_file)
+        monkeypatch.setattr("subprocess.run", lambda *a, **k: None)
+
+        result = _run(["cards", "publish", "2026-09-15", "--store", str(store_root)])
+        assert result.exit_code == 0
+        assert (isolated_reviews_dir / "2026-09-15-review.md").is_file()
+
+    def test_skip_reviews_writes_no_private_file(
+        self, tmp_path, falcon_stats_file, narrative_file, monkeypatch, isolated_reviews_dir
+    ):
+        store_root = tmp_path / "store"
+        self._ingest(store_root, falcon_stats_file, narrative_file)
+        monkeypatch.setattr("subprocess.run", lambda *a, **k: None)
+
+        result = _run(["cards", "publish", "2026-09-15", "--store", str(store_root), "--skip-reviews"])
+        assert result.exit_code == 0
+        assert not isolated_reviews_dir.exists()
+
+    def test_dry_run_names_the_review_path_but_writes_nothing(
+        self, tmp_path, falcon_stats_file, narrative_file, isolated_reviews_dir
+    ):
+        store_root = tmp_path / "store"
+        self._ingest(store_root, falcon_stats_file, narrative_file)
+
+        result = _run(["cards", "publish", "2026-09-15", "--store", str(store_root), "--dry-run"])
+        assert result.exit_code == 0
+        assert "2026-09-15-review.md" in result.output
+        assert not isolated_reviews_dir.exists()
 
     def test_skip_flags_prevent_the_matching_publish_call(
         self, tmp_path, falcon_stats_file, narrative_file, monkeypatch

@@ -5,16 +5,18 @@ the package should build a path from ``Path.home()`` — import from here instea
 so the layout can change in one place.
 
 Ownership matters as much as location. tradekit is free to move the files it
-owns, but two of these paths are shared contracts with the rest of the Falcon
+owns, but some of these paths are shared contracts with the rest of the Falcon
 suite (see ``docs/falcon-suite-compatibility.md``) and cannot be relocated
 unilaterally:
 
 - ``falcon_db()`` — contract C1. falcon *writes* it, tradekit only reads.
 - ``trade_review_dir()`` — contract C2. tradekit writes ``news.json`` here;
   falcon-stats reads its own files from the same tree.
+- ``reviews_dir()`` — contract C4. tradekit writes the private daily review here;
+  the LifeOS trading skill's review, trend and query workflows read it.
 
-For those two, resolution tolerates both the XDG location and the legacy one so
-the suite keeps working while its components migrate independently.
+For those, resolution tolerates both the XDG location and the legacy or external
+one so the suite keeps working while its components migrate independently.
 
 Spec mapping (https://specifications.freedesktop.org/basedir-spec/latest/):
 
@@ -43,6 +45,10 @@ LEGACY_TRADE_REVIEW_DIRS = (
     # nonexistent path under WSL and on Linux.
     Path.home() / "OneDrive" / "Documents" / "Trade_Review",
 )
+# Where the LifeOS trading skill keeps its Reviews today (contract C4). Not a
+# tradekit location: when it exists it wins over a missing XDG directory, so a
+# machine running the skill keeps writing where the skill's workflows read (#20).
+LIFEOS_REVIEWS_DIR = Path.home() / ".claude" / "LifeOS" / "USER" / "TRADING" / "Reviews"
 
 
 def _env_path(var: str) -> Path | None:
@@ -164,3 +170,19 @@ def trade_review_dir() -> Path:
 def trade_review_day_dir(year: int, month: int, date_iso: str) -> Path:
     """Day directory within the Trade_Review tree: ``<root>/YYYY/MM/YYYY-MM-DD/``."""
     return trade_review_dir() / str(year) / f"{month:02d}" / date_iso
+
+
+def reviews_dir() -> Path:
+    """Private daily reviews and gameplans (contract C4; read by the LifeOS trading skill).
+
+    ``$TRADEKIT_REVIEWS_DIR`` wins, then whichever of the XDG path or the LifeOS skill's
+    Reviews directory exists, else the XDG path. Before this resolver every caller
+    supplied the directory by hand, and the same content landed in two places (#20).
+    Files here are named ``<YYYY-MM-DD>-<kind>.md``: see :func:`review_file`.
+    """
+    return _resolve("TRADEKIT_REVIEWS_DIR", xdg_data_home() / "trading-reviews", LIFEOS_REVIEWS_DIR)
+
+
+def review_file(date_iso: str, kind: str = "review", root: Path | None = None) -> Path:
+    """``<root>/<YYYY-MM-DD>-<kind>.md``: lowercase, ISO date first (ReportingSchema Rule 7)."""
+    return (root or reviews_dir()) / f"{date_iso}-{kind.lower()}.md"

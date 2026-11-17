@@ -15,3 +15,15 @@ def isolated_api_error_log(monkeypatch, tmp_path):
     log = tmp_path / "api-errors" / "events.jsonl"
     monkeypatch.setenv("API_ERROR_LOG", str(log))
     return log
+
+
+@pytest.fixture(autouse=True)
+def isolated_reviews_dir(monkeypatch, tmp_path):
+    """Send private reviews to a per-test directory, never the real Reviews directory.
+
+    ``cards publish`` writes ``<date>-review.md`` to ``paths.reviews_dir()`` by default (#20), so
+    an unisolated test would write a fake review where the LifeOS trading skill reads real ones.
+    """
+    reviews = tmp_path / "reviews"
+    monkeypatch.setenv("TRADEKIT_REVIEWS_DIR", str(reviews))
+    return reviews

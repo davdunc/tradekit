@@ -33,6 +33,7 @@ misconception. falcon-stats ingests broker execution data.)
 | C1 | **Screen runs** | falcon | tradekit | local SQLite `$XDG_DATA_HOME/falcon/falcon.db`, legacy `~/.falcon/falcon.db` (`screen_runs`, `screen_results`) | ✅ Satisfied as of falcon `shared/sqlite_store.py` (was a gap — see below) |
 | C2 | **Trade_Review tree** | tradekit writes `news.json`; falcon-stats reads `Trades.csv`/`Orders.csv` | — | `$XDG_DATA_HOME/trade-review/<YYYY>/<MM>/<YYYY-MM-DD>/` | ⚠️ Shared parent dir only — **different files**, no direct data dependency |
 | C3 | **Round-trip store** | falcon-stats | (parquet consumers / ML) | DynamoDB `falcon-trades`; parquet export | 🚧 Parquet export is draft (falcon-stats spec 001) |
+| C4 | **Reviews directory** | tradekit (`cards publish` → `<date>-review.md`) and the LifeOS trading skill (gameplans) | LifeOS trading skill (daily/weekly review, trend loader, query) | `$TRADEKIT_REVIEWS_DIR`, else `$XDG_DATA_HOME/trading-reviews/` or the existing `~/.claude/LifeOS/USER/TRADING/Reviews/` | ✅ Resolved by `paths.reviews_dir()` (#20) |
 
 ### C1 — the falcon → tradekit screen-run contract
 
@@ -108,6 +109,13 @@ columns record which version of each contract that combo implements.
   (`~/.local/share/trade-review/`). tradekit reads either location; falcon-stats
   must opt in before this becomes the only one. See
   [ADR 0001](adr/0001-xdg-base-directories.md).
+- **C4.v1** — flat directory of `<YYYY-MM-DD>-<kind>.md` files (`review`, `gameplan`),
+  lowercase and ISO-date first per ReportingSchema Rule 7 (tradekit previously wrote
+  `REVIEW-<date>.md`). Resolved by `paths.reviews_dir()`: `$TRADEKIT_REVIEWS_DIR`, then
+  whichever of `$XDG_DATA_HOME/trading-reviews/` or the LifeOS skill's
+  `~/.claude/LifeOS/USER/TRADING/Reviews/` exists, else the XDG path. Machines running
+  the skill keep its directory; set `$TRADEKIT_REVIEWS_DIR` where both tools must agree
+  on a non-default location.
 
 ---
 
