@@ -353,6 +353,17 @@ def test_min_avg_volume_uses_thousands():
 # ----- api-403 event log -----
 
 
+def test_test_403s_never_reach_real_log(fake_http, isolated_api_error_log, monkeypatch, tmp_path):
+    """Regression for #24: a fake 403 in a test lands in the per-test log, not the real one."""
+    real_state = tmp_path / "real-state"
+    monkeypatch.setenv("XDG_STATE_HOME", str(real_state))
+    s, _ = _session(max_attempts=2)
+    fake_http.extend([_resp(403), _resp(200, "Ticker\n")])
+    s.get(URL, expect_csv=True)
+    assert len(isolated_api_error_log.read_text(encoding="utf-8").splitlines()) == 1
+    assert not (real_state / "api-errors").exists()
+
+
 def test_403_recorded_redacted(fake_http, monkeypatch, tmp_path):
     import json
 
