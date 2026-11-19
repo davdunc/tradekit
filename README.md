@@ -209,6 +209,30 @@ banner on stdout, so `> plan.md` would capture that too.
 
 Run `tradekit --help` for the full command list.
 
+### Recording order-book depth
+
+Order-book depth can't be backfilled, so `tradekit depth record` captures it as it happens
+(#9), to Parquet under `$TRADEKIT_DEPTH_DIR` (default `~/.local/share/tradekit/depth/`):
+
+```bash
+tradekit depth record AAPL NVDA TSLA --until 16:00          # auto: DAS, falling back to IBKR
+tradekit depth record AAPL --source ibkr                     # one source, no fallback
+tradekit depth record AAPL --source alpaca                   # level 1 only, explicit
+```
+
+| `--source` | Data | Notes |
+|---|---|---|
+| `auto` (default) | Full depth | DAS first, IB Gateway as the automatic fallback; switches back to DAS with a short overlap when it returns |
+| `das` | Full depth, market-maker IDs | Adapter not finished yet (#9): it must be completed on a host running DAS Trader |
+| `ibkr` | Full depth | IB Gateway on this machine; install with `tradekit-cli[ibkr]`, connects read-only |
+| `alpaca` | **Best bid/ask and trades only** | Never chosen by `auto`; rows carry `depth_levels=1`. Install with `tradekit-cli[alpaca]`, keys in `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` |
+
+Output is partitioned as `book|trades|markers / date= / source= / symbol=`, readable as one
+dataset with pandas, pyarrow or DuckDB. Markers record every start, stop, source switch and
+gap, so missing depth is never mistaken for a quiet market. IB Gateway settings: `IBKR_HOST`,
+`IBKR_PORT` (4002 paper, 4001 live), `IBKR_CLIENT_ID`; Alpaca's feed: `ALPACA_FEED` (`iex` or
+`sip`).
+
 ---
 
 ## Integration with LifeOS

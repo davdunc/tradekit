@@ -105,6 +105,15 @@ class DataSettings(BaseSettings):
     # same-day fallback and data/massive_rest.py (regime inputs). Consolidating these
     # three schemes is tracked, not done here.
     polygon_api_key: str = ""
+    # Depth recorder sources (#9). IB Gateway: 4002 is the paper port, 4001 live.
+    ibkr_host: str = "127.0.0.1"
+    ibkr_port: int = 4002
+    ibkr_client_id: int = 17
+    # Alpaca, under Alpaca's own variable names (APCA_API_KEY_ID / APCA_API_SECRET_KEY).
+    # Feed: "iex" (free plan, IEX only) or "sip" (Algo Trader Plus, all US exchanges).
+    apca_api_key_id: str = ""
+    apca_api_secret_key: str = ""
+    alpaca_feed: str = "iex"
 
 
 class ScreenerSettings(BaseSettings):

@@ -141,6 +141,15 @@ def group_snapshot(date_iso: str) -> Path:
     return data_dir() / f"groups_{date_iso}.json"
 
 
+def depth_dir() -> Path:
+    """Recorded order-book depth (#9): Parquet partitioned by kind / date / source / symbol.
+
+    ``$TRADEKIT_DEPTH_DIR`` overrides it; the dataset grows by the session, so it may belong on
+    a larger disk than the rest of the data directory.
+    """
+    return _env_path("TRADEKIT_DEPTH_DIR") or data_dir() / "depth"
+
+
 # --- Shared suite contracts — not ours to relocate alone --------------------
 
 
