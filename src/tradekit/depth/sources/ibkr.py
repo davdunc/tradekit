@@ -57,6 +57,19 @@ def book_update_from_dom(symbol: str, tick: Any) -> BookUpdate | None:
     )
 
 
+def missing_settings(host: str, port: int | None) -> list[str]:
+    """The IB Gateway connection variables that aren't set. Neither has a default (SPEC G12)."""
+    return [name for name, value in (("IBKR_HOST", host), ("IBKR_PORT", port)) if not value]
+
+
+def missing_settings_message(missing: Sequence[str]) -> str:
+    return (
+        f"IBKR source needs {' and '.join(missing)} "
+        "(IB Gateway: 4002 paper, 4001 live; TWS: 7497 paper, 7496 live). "
+        "There is no default: a guessed port would be refused and look like IBKR being down"
+    )
+
+
 def marker_from_tws_error(req_id: int, code: int, message: str, contract: Any = None) -> Marker | None:
     """A TWS error/status message as an ``error`` marker; ``None`` for harmless status codes."""
     if code in STATUS_CODES:
@@ -68,13 +81,18 @@ def marker_from_tws_error(req_id: int, code: int, message: str, contract: Any = 
 class IBKRSource:
     name = "ibkr"
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 4002, client_id: int = 17, *, levels: int = 10):
+    def __init__(self, host: str, port: int | None, client_id: int = 17, *, levels: int = 10):
         self.host, self.port, self.client_id, self.levels = host, port, client_id, levels
         self._ib: Any = None
         self._queue: asyncio.Queue[Event | None] = asyncio.Queue()
         self._symbol_of: dict[int, str] = {}  # contract conId -> symbol
 
     async def connect(self) -> None:
+        missing = missing_settings(self.host, self.port)
+        if missing:
+            from tradekit.depth.recorder import PermanentlyUnavailable
+
+            raise PermanentlyUnavailable(missing_settings_message(missing))
         try:
             from ib_async import IB
         except ImportError as e:

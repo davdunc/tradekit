@@ -6,7 +6,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import yaml
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 from tradekit.paths import cache_dir as _default_cache_dir
@@ -105,15 +105,23 @@ class DataSettings(BaseSettings):
     # same-day fallback and data/massive_rest.py (regime inputs). Consolidating these
     # three schemes is tracked, not done here.
     polygon_api_key: str = ""
-    # Depth recorder sources (#9). IB Gateway: 4002 is the paper port, 4001 live.
-    ibkr_host: str = "127.0.0.1"
-    ibkr_port: int = 4002
-    ibkr_client_id: int = 17
+    # Depth recorder sources (#9). IB Gateway: 4002 is the paper port, 4001 live; TWS 7497 / 7496.
+    # Host and port take no default (SPEC "no fallback default", G12): a guessed port is refused,
+    # and a refusal reads as "IBKR is down" while the Gateway runs fine on another port.
+    ibkr_host: str = ""
+    ibkr_port: int | None = None
+    ibkr_client_id: int = 17  # a wrong id fails distinctly ("client id in use"), so a default is safe
     # Alpaca, under Alpaca's own variable names (APCA_API_KEY_ID / APCA_API_SECRET_KEY).
     # Feed: "iex" (free plan, IEX only) or "sip" (Algo Trader Plus, all US exchanges).
     apca_api_key_id: str = ""
     apca_api_secret_key: str = ""
     alpaca_feed: str = "iex"
+
+    @field_validator("ibkr_port", mode="before")
+    @classmethod
+    def _blank_port_is_unset(cls, value):
+        """``IBKR_PORT=`` (as in .env.example) means unset, not a parse error for every command."""
+        return None if isinstance(value, str) and not value.strip() else value
 
 
 class ScreenerSettings(BaseSettings):

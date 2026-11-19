@@ -229,9 +229,19 @@ tradekit depth record AAPL --source alpaca                   # level 1 only, exp
 
 Output is partitioned as `book|trades|markers / date= / source= / symbol=`, readable as one
 dataset with pandas, pyarrow or DuckDB. Markers record every start, stop, source switch and
-gap, so missing depth is never mistaken for a quiet market. IB Gateway settings: `IBKR_HOST`,
-`IBKR_PORT` (4002 paper, 4001 live), `IBKR_CLIENT_ID`; Alpaca's feed: `ALPACA_FEED` (`iex` or
-`sip`).
+gap, so missing depth is never mistaken for a quiet market. Alpaca's feed: `ALPACA_FEED`
+(`iex` or `sip`).
+
+IB Gateway needs `IBKR_HOST` and `IBKR_PORT` (Gateway 4002 paper / 4001 live; TWS 7497 / 7496),
+plus optional `IBKR_CLIENT_ID` (default 17). Host and port have **no default**: a guessed port
+would be refused, and a refusal is recorded as "IBKR unavailable" while the Gateway runs fine on
+another port. Unset, `--source ibkr` stops with a usage error and `auto` warns that it has no
+fallback this run.
+
+```sh
+IBKR_HOST=127.0.0.1
+IBKR_PORT=4002
+```
 
 ---
 

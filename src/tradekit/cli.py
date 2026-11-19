@@ -2845,6 +2845,16 @@ def depth_record(
     stop_after = _seconds_until_et(until) if until else None
     root = out or depth_dir()
     sources = build_sources(source, factories(levels=levels))
+    if any(s.name == "ibkr" for s in sources):
+        from tradekit.config import get_settings
+        from tradekit.depth.sources.ibkr import missing_settings, missing_settings_message
+
+        data = get_settings().data
+        missing = missing_settings(data.ibkr_host, data.ibkr_port)
+        if missing and source == "ibkr":  # the only source: recording would capture nothing
+            raise click.UsageError(missing_settings_message(missing))
+        if missing:
+            click.echo(f"Warning: no IBKR fallback this run. {missing_settings_message(missing)}.", err=True)
     sink = ParquetSink(root)
     chain = " → ".join(s.name for s in sources)
     click.echo(f"Recording {', '.join(s.upper() for s in symbols)} from {chain} into {root}")

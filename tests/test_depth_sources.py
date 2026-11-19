@@ -9,6 +9,7 @@ from click.testing import CliRunner
 
 from tradekit import cli as cli_mod
 from tradekit.depth.events import FULL_DEPTH
+from tradekit.depth.recorder import PermanentlyUnavailable, Recorder
 from tradekit.depth.sources import MissingExtra, factories
 from tradekit.depth.sources.alpaca import AlpacaSource, book_updates_from_quote, trade_from_alpaca
 from tradekit.depth.sources.das import DASSource
@@ -68,7 +69,69 @@ def test_ibkr_data_farm_status_is_not_a_marker(code):
 def test_ibkr_without_ib_async_names_the_extra(monkeypatch):
     monkeypatch.setitem(sys.modules, "ib_async", None)  # make the import fail
     with pytest.raises(MissingExtra, match=r"tradekit-cli\[ibkr\]"):
-        asyncio.run(IBKRSource().connect())
+        asyncio.run(IBKRSource("127.0.0.1", 4002).connect())
+
+
+# G12: host and port have no default, so a guessed port can't be refused and read as an outage.
+
+
+@pytest.mark.parametrize(
+    ("host", "port", "named"),
+    [("", None, "IBKR_HOST and IBKR_PORT"), ("127.0.0.1", None, "IBKR_PORT"), ("", 4002, "IBKR_HOST")],
+)
+def test_ibkr_without_connection_settings_is_permanently_unavailable(host, port, named):
+    with pytest.raises(PermanentlyUnavailable, match=named):
+        asyncio.run(IBKRSource(host, port).connect())
+
+
+def test_ibkr_missing_settings_are_checked_before_the_sdk(monkeypatch):
+    """Unconfigured is reported as unconfigured, even where ib_async isn't installed."""
+    monkeypatch.setitem(sys.modules, "ib_async", None)
+    with pytest.raises(PermanentlyUnavailable, match="IBKR_PORT"):
+        asyncio.run(IBKRSource("127.0.0.1", None).connect())
+
+
+def test_settings_give_ibkr_no_default_host_or_port():
+    from tradekit.config import DataSettings
+
+    fields = DataSettings.model_fields
+    assert fields["ibkr_host"].default == ""
+    assert fields["ibkr_port"].default is None
+
+
+def test_blank_ibkr_port_from_env_example_is_unset(monkeypatch):
+    """.env.example ships ``IBKR_PORT=``; that must read as unset, not break every command."""
+    from tradekit.config import DataSettings
+
+    monkeypatch.setenv("IBKR_HOST", "")
+    monkeypatch.setenv("IBKR_PORT", "")
+    data = DataSettings()
+    assert (data.ibkr_host, data.ibkr_port) == ("", None)
+
+
+def test_ibkr_port_from_env_is_an_int(monkeypatch):
+    from tradekit.config import DataSettings
+
+    monkeypatch.setenv("IBKR_PORT", "4001")
+    assert DataSettings().ibkr_port == 4001
+
+
+def test_unconfigured_ibkr_in_auto_is_skipped_once_and_recorded_as_a_gap():
+    sink = SimpleNamespace(events=[], flush=lambda: None)
+    sink.add = sink.events.append
+    recorder = Recorder([DASSource(), IBKRSource("", None)], ["SPY"], sink, retry_seconds=0.01)
+
+    async def run_briefly():
+        stop = asyncio.Event()
+        asyncio.get_running_loop().call_later(0.1, stop.set)
+        await recorder.run(stop)
+
+    asyncio.run(run_briefly())
+    markers = [(e.marker, e.source, e.detail) for e in sink.events]
+    ibkr_errors = [d for m, s, d in markers if m == "error" and s == "ibkr"]
+    assert len(ibkr_errors) == 1, markers  # reported once, not on every retry
+    assert "IBKR_HOST and IBKR_PORT" in ibkr_errors[0]
+    assert [m for m, _, _ in markers].count("gap_start") == 1
 
 
 # ----- Alpaca: level 1 only -----
@@ -131,6 +194,42 @@ def test_cli_until_in_the_past_is_a_usage_error():
     result = CliRunner().invoke(cli_mod.cli, ["depth", "record", "AAPL", "--until", "00:00"])
     assert result.exit_code == 2
     assert "already passed" in result.output
+
+
+def _settings(host="", port=None):
+    data = SimpleNamespace(
+        ibkr_host=host,
+        ibkr_port=port,
+        ibkr_client_id=17,
+        apca_api_key_id="",
+        apca_api_secret_key="",
+        alpaca_feed="iex",
+    )
+    return SimpleNamespace(data=data)
+
+
+def test_cli_ibkr_without_settings_is_a_usage_error(monkeypatch, tmp_path):
+    from tradekit import config
+
+    monkeypatch.setattr(config, "get_settings", lambda: _settings())
+    result = CliRunner().invoke(cli_mod.cli, ["depth", "record", "SPY", "--source", "ibkr", "--out", str(tmp_path)])
+    assert result.exit_code == 2, result.output
+    assert "IBKR_HOST and IBKR_PORT" in result.output
+
+
+def test_cli_auto_without_ibkr_settings_warns_and_records(monkeypatch, tmp_path):
+    from tradekit import config
+    from tradekit.depth import recorder
+
+    async def instant(self, stop):
+        return None
+
+    monkeypatch.setattr(config, "get_settings", lambda: _settings(host="127.0.0.1"))
+    monkeypatch.setattr(recorder.Recorder, "run", instant)
+    result = CliRunner().invoke(cli_mod.cli, ["depth", "record", "SPY", "--out", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    assert "no IBKR fallback this run" in result.stderr
+    assert "IBKR_PORT" in result.stderr
 
 
 def test_cli_alpaca_warns_it_is_not_depth(monkeypatch, tmp_path):

@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     disconnecting, not by silence. Gaps with no source are written as markers.
   - `--source das|ibkr|alpaca`: one source only, retried but never substituted.
   - IBKR through IB Gateway (`tradekit-cli[ibkr]`, `ib_async`), connected read-only.
+    `IBKR_HOST` and `IBKR_PORT` have no default (SPEC G12): unset, `--source ibkr` is a
+    usage error and `auto` warns that it has no fallback, instead of guessing a port whose
+    refusal would read as IBKR being down.
   - Alpaca (`tradekit-cli[alpaca]`, `alpaca-py`) is **level 1 only** (best bid/ask and
     trades, `depth_levels=1`) and runs only when explicitly selected.
   - The DAS adapter is a placeholder until it is finished on a host running DAS Trader.
