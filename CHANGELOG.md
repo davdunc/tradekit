@@ -26,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Date and BMO/AMC timing come from Finviz Elite's earnings date (one request at most)
     unless `--date` and `--timing` are given. `--json` for machine use.
   - Core in `tradekit.analysis.earnings` (#37); option chain from CBOE delayed quotes.
+- **`tradekit init` sets up the account mapping** (#18, #40). It shows where the
+  LIVE/SIM mapping comes from and, when neither `$TRADEKIT_ACCOUNT_KINDS` nor
+  `~/.config/tradekit/accounts.toml` exists, asks for `ID=LIVE,ID=SIM` pairs and writes
+  the file (mode 600 on POSIX, never overwriting an existing one).
+- **Canonical Reviews directory: `paths.reviews_dir()`** (#20, #39), documented as
+  shared suite contract C4. `$TRADEKIT_REVIEWS_DIR` wins, then whichever of
+  `~/.local/share/trading-reviews/` or the LifeOS skill's
+  `~/.claude/LifeOS/USER/TRADING/Reviews/` exists, else the XDG path.
+  `cards publish` gains `--skip-reviews`.
+- **README: "Upgrading an existing machine"** (#40) — how to tell the three install
+  shapes apart and upgrade each, and why `uv tool install --force` replaces a hand-written
+  shim and drops the environment it sets (e.g. `AWS_PROFILE`). Plus an "Account mapping"
+  section.
 
 ### Changed
 
@@ -40,6 +53,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   each `v*` tag, attaches them to the GitHub release (it can also be run by hand for an
   existing tag), then publishes them to PyPI as `tradekit-cli` through trusted
   publishing. Tags from before the rename are not published.
+- **`cards publish` writes the private review by default** (#20, #39). Without
+  `--reviews-dir` it used to skip the write silently; it now writes to
+  `paths.reviews_dir()`. Pass `--skip-reviews` for the old behaviour. The file is named
+  `<date>-review.md` (was `REVIEW-<date>.md`), matching every other artifact there.
+- **A dead scanner exits 3, not 0** (#16, #17, #36, #38). `scan`, `second-day`,
+  `morning`, `report` and `gameplan` now stop with *UNAVAILABLE, not empty* (exit 3) when
+  the public Finviz screener can't be read or when no candidate resolves at the data
+  provider, the same as they already did on a Finviz throttle. Schedulers that treated
+  exit 0 + "no results" as normal will now see the failure.
+
+### Fixed
+
+- **Fake test 403s were filed as real Finviz throttling** (#24, #35). Tests fed fake
+  403 responses through `FinvizSession` without redirecting `API_ERROR_LOG`, so every
+  suite run appended five events to `~/.local/state/api-errors/events.jsonl`, and the
+  LifeOS reporter filed them on #24. Every occurrence there came from test runs. Tests
+  now use a per-test log (and a per-test Reviews directory).
+- **Public-screener fallback reported a quiet tape when it was dead** (#16, #36). Finviz
+  moved its screener to `/screener/stocks`, which has no HTML results table, so the
+  vendored scraper returned `None` and the no-token fallback printed "No results found".
+  A page without a results table now raises `FinvizUnavailable` (a real zero-result
+  screen still renders the table and stays empty).
+- **Scanners hid a dead data provider** (#17, #38). When the screener found candidates
+  but none resolved (bad symbols, an expired key, an outage), the scanners returned
+  nothing. They now raise `EnrichmentError`, after re-checking up to three candidates so
+  that early-morning symbols with no pre-market trades yet still read as empty. They also
+  log a sample of the symbols they enrich, and `second-day` no longer suggests lowering
+  thresholds when nothing resolved.
+- **Accounts rendered `UNMAPPED` with no explanation** (#18, #40). Reports now log one
+  warning naming both ways to configure the mapping, and one per account missing from an
+  existing mapping.
 
 ## [0.5.0] — 2026-11-01
 
