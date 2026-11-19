@@ -16,6 +16,7 @@ cached for ``finviz_cache_ttl_minutes`` — and filtered locally, so ``scan``, `
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import io
 import json
@@ -33,6 +34,36 @@ from tradekit.data.finviz_http import finviz_get, redact
 logger = logging.getLogger(__name__)
 
 GROUP_TYPES = ("sector", "industry", "country")
+
+_MARKET_OPEN = dt.time(9, 30)
+_MARKET_CLOSE = dt.time(16, 0)
+
+
+def parse_earnings_date(raw: object) -> tuple[dt.date, str] | None:
+    """Parse the export's ``Earnings Date`` into ``(date, timing)``; ``None`` if absent.
+
+    Finviz exports a US Eastern timestamp such as ``"10/29/2026 4:30:00 PM"`` (verified
+    2026-11-19: 4:30 PM for after-close reports, 8:30 AM for pre-market ones). Timing:
+    ``BMO`` before the 9:30 open, ``AMC`` at or after the 16:00 close, ``unknown`` in
+    between. Tickers without earnings (ETFs) export an empty value.
+    """
+    if raw is None or (isinstance(raw, float) and raw != raw):  # None or NaN
+        return None
+    text = str(raw).strip()
+    for fmt in ("%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %I:%M %p", "%m/%d/%Y"):
+        try:
+            when = dt.datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        if fmt == "%m/%d/%Y":
+            return when.date(), "unknown"
+        if when.time() < _MARKET_OPEN:
+            return when.date(), "BMO"
+        if when.time() >= _MARKET_CLOSE:
+            return when.date(), "AMC"
+        return when.date(), "unknown"
+    return None
+
 
 # Column codes per the Elite Groups export spec.
 # 0=No, 1=Name, 2=MktCap, 14=FloatShort, 15=PerfWeek, 16=PerfMonth,
@@ -205,6 +236,18 @@ class FinvizEliteProvider:
         r = finviz_get(url, expect_csv=True, timeout=self.config.timeout)
 
         return self._coerce_pct(pd.read_csv(io.StringIO(r.text)))
+
+    def get_earnings_event(self, ticker: str) -> tuple[dt.date, str] | None:
+        """The ticker's latest Finviz earnings date and BMO/AMC timing, or ``None``.
+
+        One export request at most (none when the cached universe is fresh). Finviz shows
+        the most recent or next scheduled report, so the date can be in the past.
+        """
+        df = self.get_quotes([ticker], cols=["ticker", "earnings"])
+        col = next((c for c in df.columns if c.lower().startswith("earnings")), None)
+        if df.empty or col is None:
+            return None
+        return parse_earnings_date(df[col].iloc[0])
 
     def _coerce_pct(self, df: pd.DataFrame) -> pd.DataFrame:
         """Turn Finviz '4.51%' string columns into floats (in place) and return the frame."""
