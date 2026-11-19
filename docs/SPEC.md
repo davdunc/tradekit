@@ -33,7 +33,8 @@ and how a release is cut.
 
 ## Module structure
 
-Six packages, 6,238 lines. `cli.py` is 2,351 of them — see [Known gaps](#known-gaps).
+12,261 lines outside `_vendor/` (2026-11-19). `cli.py` is 3,294 of them — see [Known gaps](#known-gaps).
+`regime` and `reporting` exist but are not yet described in this table.
 
 | Package | Responsibility |
 |---|---|
@@ -44,6 +45,7 @@ Six packages, 6,238 lines. `cli.py` is 2,351 of them — see [Known gaps](#known
 | `screener` | Candidate selection: pre-market scan, filters, ranking. |
 | `reports` | Rendering only — terminal, markdown, HTML, alerts, blotter. |
 | `agents` | LLM-backed workflows: bull/bear debate, inference. |
+| `depth` | Order-book depth recording (#9): normalized events, Parquet sink, the failover recorder, and one adapter per feed under `depth/sources/`. See [Depth recording and source failover](#depth-recording-and-source-failover). |
 | `cli` | Click entry points. The only user-facing surface. |
 
 ### Import direction
@@ -58,6 +60,7 @@ analysis   -> config
 screener   -> analysis, config, data
 reports    -> config, data
 agents     -> paths
+depth      -> config
 cli        -> everything
 ```
 
@@ -117,6 +120,102 @@ specific past date (not "the last N days") cannot use the provider layer at all
 today; `reports/blotter.py` works around this with a direct fetch instead of going
 through `massive`/`backtest`. Know this before reaching for `get_history` to solve
 that shape of problem.
+
+## Depth recording and source failover
+
+Order-book depth cannot be backfilled: a session not recorded is lost. `tradekit depth
+record` therefore treats **availability** as the first requirement and **honesty about
+what was recorded** as the second. Every rule below serves one of those two.
+
+### The source contract
+
+`depth/recorder.py` defines `DepthSource`, a `Protocol` like `DataProvider`:
+
+```python
+class DepthSource(Protocol):
+    name: str
+
+    async def connect(self) -> None: ...  # raise = unavailable
+    async def subscribe(self, symbols: Sequence[str]) -> None: ...
+    def events(self) -> AsyncIterator[Event]: ...  # end or raise = disconnected
+    async def close(self) -> None: ...
+```
+
+- **Raising from `connect` or `subscribe` means "unavailable now".** The recorder retries
+  every `--retry` seconds and marks the error only when its text changes.
+- **`NotImplementedError` or `PermanentlyUnavailable` means "unavailable for this run".**
+  Reported once, then skipped. A missing optional SDK raises `MissingExtra`, which names
+  the extra to install (`tradekit-cli[ibkr]`, `tradekit-cli[alpaca]`).
+- **`events()` ending or raising is a disconnect**, and triggers failover at once, not at
+  the next retry tick.
+- Adapters import their broker SDK inside `connect()`, so the base install carries none.
+
+### Source selection
+
+| `--source` | Chain | Rule |
+|---|---|---|
+| `auto` (default) | `das` → `ibkr` | DAS preferred, IB Gateway the automatic fallback |
+| `das` / `ibkr` | that source only | Retried after a failure, **never substituted** |
+| `alpaca` | that source only | Level 1. **Never part of `auto`** |
+
+Failover rules, in `Recorder._step`:
+
+1. Fail over when a source fails to connect, raises, or ends its stream. **Never on
+   silence**: a thin symbol can print nothing for minutes before the open.
+2. When a more preferred source returns, run both for `--overlap` seconds, then stop the
+   fallback. A handover has overlap, never a gap.
+3. With no source up, write `gap_start`; write `gap_end` when one connects.
+4. Every transition is a `Marker` row (`start`, `stop`, `switch`, `error`, `gap_start`,
+   `gap_end`) beside the book data, so a reader can tell "empty book" from "not recorded".
+
+### Honesty rules
+
+- **Level 1 never passes for depth.** Every `BookUpdate` carries `depth_levels`; Alpaca
+  writes level-1 rows, and the `auto` chain excludes it so the depth dataset is never
+  silently downgraded.
+- **A refusal is never an empty book.** The IBKR adapter turns every TWS message into an
+  `error` marker except the data-farm status codes in `STATUS_CODES` (2104, 2106, 2107,
+  2108, 2119, 2158). This is an allowlist of *harmless* codes, not of errors: the first
+  live run used an error allowlist, missed 2152 and 10089, and recorded 60 s of nothing
+  with no explanation (`dbe85ed`).
+- **Read-only, always.** IBKR connects with `readonly=True`; also set the Gateway's
+  *Read-Only API*. The DAS adapter must send only login and market-data commands and refuse
+  order commands, and the CMD API is reached through an SSH local forward from the DAS
+  host, never a port opened to the network: that API can place orders.
+
+### What IBKR depth actually contains
+
+Verified live 2026-11-19 against the paper Gateway (`--source auto`, SPY and AAPL, 45 s):
+DAS was skipped, IBKR started as the fallback, and 3,222 book updates were written across
+ten levels from AMEX, BYX, CHX, EDGEA, MEMX, NYSENAT, PEARL and others.
+
+- **SMART depth is mixed depth.** On a non-professional account with only the free
+  IEX Depth of Book feed, TWS answers each request with 2152
+  `Exchanges - Depth: IEX; Top: BYX; AMEX; …`: IEX contributes full depth, the other venues
+  only their top of book. The marker records this per symbol; analysis must read it
+  rather than assume every venue is full depth.
+- **Concurrent depth requests are capped, and TWS misstates the cap.** With 12 symbols the
+  paper account accepted the first **4** and refused the 5th onward with 309
+  `Max number (3) of market depth requests`; a 4-symbol run recorded all four. Trust the
+  measured count, not the number in the message. Depth is requested in the order given,
+  so symbols past the cap appear only as `error` markers. `depth record` names them in a
+  warning before the session starts (`IBKR_DEPTH_LIMIT`, default 4) and still requests
+  them; it never truncates the list.
+- **A paper account sees live data only through sharing**, and only while the live
+  username is logged out everywhere; otherwise the paper session drops to delayed data.
+
+### Adding a source
+
+1. New module under `depth/sources/`, implementing `DepthSource`. Inherit nothing.
+2. Map the feed's messages to `BookUpdate` / `Trade` / `Marker` in pure functions
+   (`book_update_from_dom`, `marker_from_tws_error`) so they can be tested without a
+   connection.
+3. Test those functions against messages **captured live and pasted verbatim**, as
+   `tests/test_depth_sources.py` does for IBKR. Hand-written fixtures are how 2152 was
+   missed.
+4. Register it in `depth/sources/__init__.py:factories()` and `SOURCES`. Add it to
+   `AUTO_CHAIN` only if it delivers true depth.
+5. Connection settings resolve under the no-fallback rule below.
 
 ## Configuration
 
@@ -242,7 +341,9 @@ schema or moved contract path is a major one.
 **What must have a test:** every analysis function (pure, so there is no excuse),
 every path resolver including its legacy fallback, and every screener filter
 boundary. Providers may be integration-tested or skipped, but must never require
-live credentials to *collect*.
+live credentials to *collect*. Depth source mappings are tested against verbatim live
+messages, and the recorder's failover is tested with fake sources
+(`tests/test_depth_*.py`, 33 tests); none needs a broker to collect.
 
 CI gates on Python 3.14:
 
@@ -295,12 +396,15 @@ Recorded rather than hidden. Each is a rule above that nothing currently enforce
 | ~~G2~~ | ~~**Version stated in four places, all disagreeing.**~~ **Closed 2026-08-29.** `__version__` now derives from installed metadata; `pyproject.toml`, `packaging/tradekit.spec` and `CHANGELOG.md` all read 0.3.0. | `pyproject`/`spec`/`CHANGELOG` all 0.3.0; `tradekit.__version__` derived | Remaining: a CI check asserting the three files still agree — otherwise this reopens (see G4) |
 | G3 | **Import direction is documented, not enforced.** Nothing fails if `analysis` imports `data` tomorrow. | — | Add an import-direction test |
 | G4 | **RPM `Requires:` drifts silently** from `pyproject.toml`. *`Commands:` half closed 2026-11-10:* `tests/test_packaging.py` fails when the `%description` list and `cli.commands` disagree (it caught `cards` and `gex` missing). | matplotlib was missing | Extend the test to compare `Requires:` with `pyproject.toml` dependencies |
-| G5 | **`cli.py` is 2,351 lines**, 38% of the codebase, and holds logic that belongs in `screener` and `reports`. | — | Extract incrementally; no new business logic in `cli.py` |
+| G5 | **`cli.py` is 3,294 lines** (2026-11-19), 27% of the codebase, and holds logic that belongs in `screener` and `reports`. | — | Extract incrementally; no new business logic in `cli.py` |
 | G6 | **mypy: 156 errors across 57 files.** | `mypy src/tradekit` | Ratchet, do not flip |
 | G7 | **`reports/html.py:323` imports a private helper** from `data.finviz` instead of the public `paths.trade_review_day_dir`. | `grep -n _trade_review_day_dir src/tradekit/reports/html.py` | Call the public function |
 | G8 | ~~**Account kind classification is broken; `main` is red.**~~ **CLOSED by #11 (`5ad22cc`).** `DEFAULT_ACCOUNT_KINDS = {}` fell through to `AccountKind.LIVE` for every account, so a SIM book reported as LIVE, and 3 `tests/test_reporting.py` tests failed on `main`. `default_account_kinds()` now resolves `$TRADEKIT_ACCOUNT_KINDS` then `[accounts]` in `~/.config/tradekit/accounts.toml`; an unmapped account renders `UNMAPPED (<id>)` instead of claiming a risk basis it was never told. | `pytest tests/test_reporting.py` → 41 passed | Done. Kept in the register because the *shape* recurs: a hardcoded value removed for a good reason, its replacement never written, and a permissive default that made the gap invisible rather than loud |
 | G9 | **`get_history` cannot serve an explicit historical date, and the same vendor now has four divergent credential schemes.** `reports/blotter.py` needs bars for one specific past (or current) date, not a relative `period` anchored to `now()`, so it cannot use the `DataProvider` layer at all — it fetches Massive S3 flat files directly with `boto3` (`MASSIVE_S3_ACCESS_KEY`/`MASSIVE_S3_SECRET_KEY`), and falls back to the Massive/Polygon REST aggs API (`POLYGON_API_KEY`) when the flat file for the current date hasn't been published yet (confirmed: it 403s/NoSuchKeys until the day after the session). That's on top of the already-separate `massive_api_key` (MCP path, `MassiveProvider`) and `backtest_access_key`/`backtest_secret_key` (`BacktestProvider`'s own S3 fields, not populated by the shared `.env` at all). Four names, one vendor. | `grep -n 'api_key\|access_key\|secret_key' src/tradekit/config.py` → `massive_api_key`, `backtest_access_key`, `backtest_secret_key`, `polygon_api_key` | Extend `get_history` with optional `from_date`/`to_date` so a date-specific caller can use the provider layer; consolidate the credential names (likely onto whatever the Massive dashboard actually issues as one pair) once a provider other than `blotter.py` needs same-day historical bars |
 | G10 | **3 tests fail on `main` as of `995ec5a`.** `TestCardsIngest::test_ingest_persists_a_retrievable_card`, `TestCardsIngest::test_ingest_without_narrative_still_persists_falcon_numbers`, `TestCardsTrend::test_trend_lists_both_days_date_sorted` — at least one failure's assertion output embeds today's wall-clock date ("Thu Oct 01... Overnight"), suggesting a date-relative fixture rather than a frozen one. Found incidentally while verifying the same-day blotter fallback (G9) didn't introduce a regression; not investigated further. | `pytest tests/test_cli_cards.py -q` on a clean `main` checkout → 3 failed, 26 passed | Pin the fixture's reference date (e.g. `freezegun` or an explicit `as_of`) so the test doesn't drift with the calendar |
+| G11 | **The DAS depth adapter is a placeholder, so `auto` is IBKR-only in practice.** `DASSource.connect()` raises `NotImplementedError`; every `auto` run opens with `error das skipped for this run` and records from the fallback. Finishing it needs a host running DAS Trader. | `src/tradekit/depth/sources/das.py`; live run 2026-11-19 → first marker is the DAS skip | Implement on `daslaptop` per the module docstring: SSH-forwarded CMD API, read-only, Level 2 parsed to `BookUpdate`, socket close ends `events()`, verbatim-capture fixture tests |
+| ~~G12~~ | ~~**`ibkr_host` / `ibkr_port` violate the no-fallback rule.**~~ **Closed 2026-11-19.** `config.py` defaulted them to `127.0.0.1:4002`; in the recorder a wrong port is a connection refusal, recorded as "ibkr unavailable" and a `gap_start`, while the Gateway runs fine on another port. Both now default to unset, and `IBKRSource` has no defaults of its own. | `tests/test_depth_sources.py`: settings defaults, `connect()` naming each missing variable, the check running before the SDK import, `auto` marking it once, and both CLI paths | Done: unset, `connect()` raises `PermanentlyUnavailable` naming `IBKR_HOST`/`IBKR_PORT` (reported once in `auto`); `--source ibkr` is a usage error before recording; `auto` warns on stderr. `IBKR_CLIENT_ID` keeps its default, since a wrong id fails distinctly ("client id in use") |
+| ~~G13~~ | ~~**No pre-check against the IBKR depth cap.**~~ **Closed 2026-11-19.** Symbols past the account's concurrent-depth limit (4 accepted on the paper account, though the 309 text says 3) were refused one by one with 309 at run time, so the user learned it only after the session started. | `tests/test_depth_sources.py`: which symbols are over, both warning wordings, no warning within the cap, with a raised limit or without IBKR, and every symbol still requested | Done: `IBKR_DEPTH_LIMIT` (default 4, measured). When `ibkr` is the source or the `auto` fallback, `depth record` warns on stderr which symbols are expected to be refused, and still requests them all. Symbols are de-duplicated so a repeat can't spend a second slot |
 
 G1 and G4 are the same failure in two places: a claim published without a check
 that the claim is true. G3 and G2 are that failure waiting to happen.

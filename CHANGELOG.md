@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`tradekit depth record`: order-book depth recorder** (#9). Depth can't be backfilled,
+  so it records as it happens, to Hive-partitioned Parquet (`book` / `trades` / `markers`,
+  by date, source and symbol) under `$TRADEKIT_DEPTH_DIR`.
+  - `--source auto` (default): DAS first, IB Gateway as the automatic fallback, switching
+    back with a short overlap when DAS returns. Failover is driven by a source failing or
+    disconnecting, not by silence. Gaps with no source are written as markers.
+  - `--source das|ibkr|alpaca`: one source only, retried but never substituted.
+  - IBKR through IB Gateway (`tradekit-cli[ibkr]`, `ib_async`), connected read-only.
+    `IBKR_HOST` and `IBKR_PORT` have no default (SPEC G12): unset, `--source ibkr` is a
+    usage error and `auto` warns that it has no fallback, instead of guessing a port whose
+    refusal would read as IBKR being down.
+  - Symbols past IBKR's concurrent depth cap (`IBKR_DEPTH_LIMIT`, default 4, as measured) are named in a
+    warning before the session starts (SPEC G13). They are still requested, so each refusal
+    (TWS 309) is recorded as a marker; repeated symbols are requested once.
+  - Alpaca (`tradekit-cli[alpaca]`, `alpaca-py`) is **level 1 only** (best bid/ask and
+    trades, `depth_levels=1`) and runs only when explicitly selected.
+  - The DAS adapter is a placeholder until it is finished on a host running DAS Trader.
 - **`tradekit size`: grade-based position sizing (ASET risk-tool rules).**
   - The grade sets the share of the daily stop at risk: A+ 80%, A 30%, B 15%, C 5%, D 0%.
   - shares = floor(risk ÷ |entry − stop|).

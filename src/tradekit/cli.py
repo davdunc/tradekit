@@ -2778,6 +2778,125 @@ def earnings(ticker: str, event_date: str | None, timing: str | None, as_json: b
 
 
 @cli.group()
+def depth():
+    """Order-book depth capture (#9): depth can't be backfilled, so record it as it happens."""
+
+
+def _seconds_until_et(hhmm: str) -> float:
+    """Seconds from now until today's ``HH:MM`` US Eastern; an error if that time has passed."""
+    import datetime as dt
+
+    try:
+        target = dt.time.fromisoformat(hhmm)
+    except ValueError as e:
+        raise click.BadParameter(f"{hhmm!r} is not HH:MM", param_hint="--until") from e
+    now = now_et()
+    seconds = (dt.datetime.combine(now.date(), target, tzinfo=now.tzinfo) - now).total_seconds()
+    if seconds <= 0:
+        raise click.BadParameter(f"{hhmm} ET has already passed today", param_hint="--until")
+    return seconds
+
+
+@depth.command("record")
+@click.argument("symbols", nargs=-1, required=True)
+@click.option(
+    "--source",
+    type=click.Choice(["auto", "das", "ibkr", "alpaca"]),
+    default="auto",
+    show_default=True,
+    help="auto = DAS, falling back to IBKR Gateway. alpaca = level 1 only, never chosen by auto.",
+)
+@click.option("--levels", type=int, default=10, show_default=True, help="Book levels per side (depth sources).")
+@click.option("--until", "until", default=None, metavar="HH:MM", help="Stop at this ET time. Default: until Ctrl-C.")
+@click.option(
+    "--out",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Output root. Default: $TRADEKIT_DEPTH_DIR, else the data dir's depth/.",
+)
+@click.option("--retry", type=float, default=30.0, show_default=True, help="Seconds between reconnect attempts.")
+@click.option(
+    "--overlap", type=float, default=30.0, show_default=True, help="Seconds both sources run when DAS returns."
+)
+def depth_record(
+    symbols: tuple[str, ...],
+    source: str,
+    levels: int,
+    until: str | None,
+    out: Path | None,
+    retry: float,
+    overlap: float,
+):
+    """Record order-book depth for SYMBOLS to Parquet, failing over between sources.
+
+    With --source auto the recorder starts on DAS and falls back to IBKR Gateway when DAS is
+    unavailable, switching back (with --overlap seconds of both) when DAS returns. Gaps with no
+    source are written as markers. Alpaca records top-of-book quotes and trades only, so it is
+    used only with --source alpaca and never substituted for depth.
+    """
+    import asyncio
+    import signal
+
+    from tradekit.depth.recorder import Recorder, build_sources
+    from tradekit.depth.sink import ParquetSink
+    from tradekit.depth.sources import factories
+    from tradekit.paths import depth_dir
+
+    stop_after = _seconds_until_et(until) if until else None
+    root = out or depth_dir()
+    sources = build_sources(source, factories(levels=levels))
+    if any(s.name == "ibkr" for s in sources):
+        from tradekit.config import get_settings
+        from tradekit.depth.sources.ibkr import (
+            depth_limit_message,
+            missing_settings,
+            missing_settings_message,
+            symbols_over_depth_limit,
+        )
+
+        data = get_settings().data
+        missing = missing_settings(data.ibkr_host, data.ibkr_port)
+        if missing and source == "ibkr":  # the only source: recording would capture nothing
+            raise click.UsageError(missing_settings_message(missing))
+        if missing:
+            click.echo(f"Warning: no IBKR fallback this run. {missing_settings_message(missing)}.", err=True)
+        else:
+            # G13: say before the session which symbols the depth cap will refuse. Never truncate:
+            # every symbol is still requested, so each refusal is recorded as a marker.
+            over = symbols_over_depth_limit(symbols, data.ibkr_depth_limit)
+            if over:
+                when = "" if source == "ibkr" else "If recording falls back to IBKR: "
+                click.echo(f"Warning: {when}{depth_limit_message(over, data.ibkr_depth_limit)}.", err=True)
+    sink = ParquetSink(root)
+    chain = " → ".join(s.name for s in sources)
+    click.echo(f"Recording {', '.join(s.upper() for s in symbols)} from {chain} into {root}")
+    if source == "alpaca":
+        click.echo("Alpaca is level 1 only (best bid/ask and trades): this is not depth.")
+    click.echo(f"Stopping at {until} ET." if until else "Ctrl-C to stop.")
+
+    async def main() -> None:
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, stop.set)
+            except NotImplementedError:  # Windows: Ctrl-C arrives as KeyboardInterrupt instead
+                pass
+        if stop_after is not None:
+            loop.call_later(stop_after, stop.set)
+        recorder = Recorder(sources, symbols, sink, retry_seconds=retry, overlap_seconds=overlap)
+        await recorder.run(stop)
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sink.close()
+    click.echo(f"Stopped. {sink.rows_written} rows written under {root}")
+
+
+@cli.group()
 def cards():
     """Canonical report cards: render and inspect stored game plans."""
 

@@ -56,6 +56,12 @@ Repository = "https://github.com/davdunc/tradekit"
 Issues = "https://github.com/davdunc/tradekit/issues"
 "LifeOS Upstream" = "https://github.com/danielmiessler/LifeOS"
 
+# Broker SDKs for the depth recorder's sources (#9). Optional so the base install and the
+# RPM carry no broker SDK; each adapter imports its SDK only when it connects.
+[project.optional-dependencies]
+ibkr = ["ib_async>=2.0"]       # IB Gateway / TWS API (depth fallback)
+alpaca = ["alpaca-py>=0.40"]   # Alpaca market data (level 1, explicit only)
+
 [project.scripts]
 tradekit = "tradekit.cli:cli"
 

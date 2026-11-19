@@ -209,6 +209,47 @@ banner on stdout, so `> plan.md` would capture that too.
 
 Run `tradekit --help` for the full command list.
 
+### Recording order-book depth
+
+Order-book depth can't be backfilled, so `tradekit depth record` captures it as it happens
+(#9), to Parquet under `$TRADEKIT_DEPTH_DIR` (default `~/.local/share/tradekit/depth/`):
+
+```bash
+tradekit depth record AAPL NVDA TSLA --until 16:00          # auto: DAS, falling back to IBKR
+tradekit depth record AAPL --source ibkr                     # one source, no fallback
+tradekit depth record AAPL --source alpaca                   # level 1 only, explicit
+```
+
+| `--source` | Data | Notes |
+|---|---|---|
+| `auto` (default) | Full depth | DAS first, IB Gateway as the automatic fallback; switches back to DAS with a short overlap when it returns |
+| `das` | Full depth, market-maker IDs | Adapter not finished yet (#9): it must be completed on a host running DAS Trader |
+| `ibkr` | Full depth | IB Gateway on this machine; install with `tradekit-cli[ibkr]`, connects read-only |
+| `alpaca` | **Best bid/ask and trades only** | Never chosen by `auto`; rows carry `depth_levels=1`. Install with `tradekit-cli[alpaca]`, keys in `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` |
+
+Output is partitioned as `book|trades|markers / date= / source= / symbol=`, readable as one
+dataset with pandas, pyarrow or DuckDB. Markers record every start, stop, source switch and
+gap, so missing depth is never mistaken for a quiet market. Alpaca's feed: `ALPACA_FEED`
+(`iex` or `sip`).
+
+IB Gateway needs `IBKR_HOST` and `IBKR_PORT` (Gateway 4002 paper / 4001 live; TWS 7497 / 7496),
+plus optional `IBKR_CLIENT_ID` (default 17). Host and port have **no default**: a guessed port
+would be refused, and a refusal is recorded as "IBKR unavailable" while the Gateway runs fine on
+another port. Unset, `--source ibkr` stops with a usage error and `auto` warns that it has no
+fallback this run.
+
+```sh
+IBKR_HOST=127.0.0.1
+IBKR_PORT=4002
+```
+
+IBKR caps concurrent depth requests per account, and Quote Booster packs raise the cap.
+Depth is requested in the order given, so symbols past the cap are refused (TWS 309) and
+recorded only as error markers. `depth record` warns about them before the session starts
+rather than dropping them. `IBKR_DEPTH_LIMIT` defaults to 4, which is what a paper account
+measurably accepted. TWS's own refusal text says "Max number (3)", but it accepts a fourth
+request. Set `IBKR_DEPTH_LIMIT` to what your account accepts.
+
 ---
 
 ## Integration with LifeOS
