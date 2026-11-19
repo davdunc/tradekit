@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Clearance comes from the 6-step checklist.
   - Opt-in `--max-risk` cap and `--atr` stop floor, plus `--json` output.
   - Spec: `docs/intents/position-sizing.md`. Decision: ADR 0003.
+- **`tradekit earnings TICKER`: implied earnings move on the event expiry** (#27).
+  - The ATM straddle ÷ spot, priced on the first expiry *after* the release: BMO on day D
+    may use D's expiry, AMC (or unknown timing) needs a later one. A same-day contract with
+    no event in it is never used. The prototype it replaces read AMZN's 10-29 AMC report
+    as 1.55% from the 0DTE straddle instead of 7.57%.
+  - Reports `event_expiry` and `expiry_quality` (`event` / `diluted` / `unusable`); with
+    no qualifying expiry within 30 days the move is UNAVAILABLE, not a wrong number.
+  - Date and BMO/AMC timing come from Finviz Elite's earnings date (one request at most)
+    unless `--date` and `--timing` are given. `--json` for machine use.
+  - Core in `tradekit.analysis.earnings` (#37); option chain from CBOE delayed quotes.
 
 ### Changed
 

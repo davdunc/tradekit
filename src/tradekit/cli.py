@@ -2681,6 +2681,102 @@ def gex(ticker: str, max_dte: int, rate: float, as_json: bool):
         click.echo(format_markdown(result))
 
 
+@cli.command()
+@click.argument("ticker")
+@click.option(
+    "--date",
+    "event_date",
+    default=None,
+    metavar="YYYY-MM-DD",
+    help="Earnings release date. Default: looked up from Finviz Elite.",
+)
+@click.option(
+    "--timing",
+    type=click.Choice(["BMO", "AMC", "unknown"], case_sensitive=False),
+    default=None,
+    help="Before market open, after market close, or unknown (treated as AMC). Default: from Finviz Elite.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON.")
+def earnings(ticker: str, event_date: str | None, timing: str | None, as_json: bool):
+    """Implied earnings move, priced on the first option expiry after the release (#27).
+
+    The ATM straddle on that expiry, divided by spot. A same-day or earlier expiry holds
+    no event and would understate the move several times over, so it is never used: when
+    no expiry within 30 days of the event qualifies, the move is reported as unavailable.
+
+    Date and timing come from Finviz Elite (FINVIZ_AUTH_TOKEN) unless --date and --timing
+    are both given. The option chain is CBOE's delayed quotes.
+    """
+    import datetime as dt
+    import json
+
+    from tradekit.analysis.earnings import implied_move
+    from tradekit.analysis.gex import GEXError
+
+    ticker = ticker.upper()
+    timing = {"bmo": "BMO", "amc": "AMC"}.get((timing or "").lower(), timing)
+    given_day = None
+    if event_date:
+        try:
+            given_day = dt.date.fromisoformat(event_date)
+        except ValueError as e:
+            raise click.BadParameter(f"{event_date!r} is not YYYY-MM-DD", param_hint="--date") from e
+    source = "given"
+    if given_day and timing:
+        day = given_day
+    else:
+        from tradekit.data.finviz_elite import FinvizEliteConfig, FinvizEliteProvider
+
+        cfg = FinvizEliteConfig.from_env()
+        if cfg is None:
+            raise click.ClickException("No FINVIZ_AUTH_TOKEN to look up the earnings date: pass --date and --timing.")
+        event = FinvizEliteProvider(cfg).get_earnings_event(ticker)
+        if event is None:
+            raise click.ClickException(f"Finviz has no earnings date for {ticker}: pass --date and --timing.")
+        found_day, found_timing = event
+        if given_day:
+            # Finviz's timing describes its own date; for any other date, timing is unknown.
+            day = given_day
+            timing = found_timing if day == found_day else "unknown"
+        else:
+            day, timing = found_day, timing or found_timing
+        source = "Finviz Elite"
+
+    try:
+        result = implied_move(ticker, day, timing)  # type: ignore[arg-type]
+    except GEXError as exc:
+        raise click.ClickException(f"Option chain unavailable: {exc}") from exc
+    result["source"] = source
+
+    if as_json:
+        click.echo(json.dumps(result, indent=2, default=str))
+        return
+
+    # Plain click.echo: rich would colour the digits and could wrap the numbers apart.
+    ago = (now_et().date() - day).days
+    when = f" ({ago} days ago)" if ago > 1 else " (yesterday)" if ago == 1 else ""
+    click.echo(f"{ticker} earnings {day.isoformat()} {timing}{when} — date from {source}")
+    if result["implied_move_pct"] is None:
+        why = (
+            "no option expiry within 30 days after the event"
+            if result["event_expiry"] is None
+            else f"no priced ATM straddle on the {result['event_expiry']} expiry"
+        )
+        click.echo(f"  Implied move UNAVAILABLE: {why}. A non-event expiry is never substituted.")
+        return
+    days = result["days_after_event"]
+    click.echo(
+        f"  Spot {result['spot']:.2f} | event expiry {result['event_expiry']} "
+        f"({result['expiry_quality']}, {days} day{'s' if days != 1 else ''} after the release)"
+    )
+    click.echo(
+        f"  ATM {result['atm_strike']:g} straddle {result['straddle']:.2f}"
+        f" → implied move ±{result['implied_move_pct']:.2f}%"
+    )
+    if result["expiry_quality"] == "diluted":
+        click.echo("  Diluted: the first qualifying expiry is far from the event, so this overstates the event move.")
+
+
 @cli.group()
 def cards():
     """Canonical report cards: render and inspect stored game plans."""
