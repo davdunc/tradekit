@@ -73,7 +73,8 @@ class Recorder:
         if not sources:
             raise ValueError("Recorder needs at least one source")
         self.sources = list(sources)  # preference order
-        self.symbols = [s.upper() for s in symbols]
+        # Case-folded and de-duplicated in order: a repeat would spend a second IBKR depth slot.
+        self.symbols = list(dict.fromkeys(s.upper() for s in symbols))
         self.sink = sink
         self.retry_seconds = retry_seconds
         self.overlap_seconds = overlap_seconds

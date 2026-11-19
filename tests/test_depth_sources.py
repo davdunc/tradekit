@@ -196,11 +196,12 @@ def test_cli_until_in_the_past_is_a_usage_error():
     assert "already passed" in result.output
 
 
-def _settings(host="", port=None):
+def _settings(host="", port=None, depth_limit=4):
     data = SimpleNamespace(
         ibkr_host=host,
         ibkr_port=port,
         ibkr_client_id=17,
+        ibkr_depth_limit=depth_limit,
         apca_api_key_id="",
         apca_api_secret_key="",
         alpaca_feed="iex",
@@ -230,6 +231,95 @@ def test_cli_auto_without_ibkr_settings_warns_and_records(monkeypatch, tmp_path)
     assert result.exit_code == 0, result.output
     assert "no IBKR fallback this run" in result.stderr
     assert "IBKR_PORT" in result.stderr
+
+
+# G13: warn before the session about symbols past the IBKR depth cap; never truncate.
+
+
+@pytest.mark.parametrize(
+    ("symbols", "limit", "over"),
+    [
+        (["SPY", "AAPL", "NVDA"], 3, []),
+        (["SPY", "AAPL", "NVDA", "TSLA", "AMD"], 3, ["TSLA", "AMD"]),
+        (["spy", "SPY", "aapl", "nvda", "tsla"], 3, ["TSLA"]),  # case-folded, de-duplicated in order
+        (["SPY", "AAPL"], 1, ["AAPL"]),
+    ],
+)
+def test_symbols_over_depth_limit(symbols, limit, over):
+    from tradekit.depth.sources.ibkr import symbols_over_depth_limit
+
+    assert symbols_over_depth_limit(symbols, limit) == over
+
+
+def test_settings_depth_limit_defaults_to_the_measured_cap_and_reads_env(monkeypatch):
+    """4, as measured live: TWS's 309 text says "Max number (3)" but the 4th request is accepted."""
+    from tradekit.config import DataSettings
+
+    assert DataSettings.model_fields["ibkr_depth_limit"].default == 4
+    monkeypatch.setenv("IBKR_DEPTH_LIMIT", "10")
+    assert DataSettings().ibkr_depth_limit == 10
+
+
+def _record(monkeypatch, tmp_path, args, **settings):
+    from tradekit import config
+    from tradekit.depth import recorder
+
+    seen = {}
+
+    async def capture(self, stop):
+        seen["symbols"] = self.symbols
+
+    monkeypatch.setattr(config, "get_settings", lambda: _settings(**settings))
+    monkeypatch.setattr(recorder.Recorder, "run", capture)
+    result = CliRunner().invoke(cli_mod.cli, ["depth", "record", *args, "--out", str(tmp_path)])
+    return result, seen
+
+
+FIVE = ["SPY", "AAPL", "NVDA", "TSLA", "AMD"]
+
+
+def test_cli_ibkr_over_the_depth_cap_warns_and_still_requests_every_symbol(monkeypatch, tmp_path):
+    args = [*FIVE, "--source", "ibkr"]
+    result, seen = _record(monkeypatch, tmp_path, args, host="127.0.0.1", port=4002, depth_limit=3)
+    assert result.exit_code == 0, result.output
+    assert "IBKR_DEPTH_LIMIT is 3 concurrent depth requests" in result.stderr
+    assert "TSLA, AMD are expected to be refused (TWS 309)" in result.stderr
+    assert "If recording falls back" not in result.stderr
+    assert seen["symbols"] == FIVE  # warned, not truncated
+
+
+def test_cli_auto_over_the_default_cap_warns_about_the_fallback(monkeypatch, tmp_path):
+    result, _ = _record(monkeypatch, tmp_path, FIVE, host="127.0.0.1", port=4002)
+    assert result.exit_code == 0, result.output
+    assert "If recording falls back to IBKR" in result.stderr
+    assert "IBKR_DEPTH_LIMIT is 4" in result.stderr
+    assert "so AMD is expected to be refused" in result.stderr
+
+
+def test_cli_repeated_symbols_are_requested_once(monkeypatch, tmp_path):
+    args = ["spy", "SPY", "aapl", "nvda", "tsla"]
+    result, seen = _record(monkeypatch, tmp_path, args, host="127.0.0.1", port=4002)
+    assert result.exit_code == 0, result.output
+    assert seen["symbols"] == ["SPY", "AAPL", "NVDA", "TSLA"]
+    assert "depth request" not in result.stderr  # four distinct symbols fit the default of four
+
+
+def test_cli_within_the_depth_cap_does_not_warn(monkeypatch, tmp_path):
+    result, _ = _record(monkeypatch, tmp_path, FIVE[:4], host="127.0.0.1", port=4002)
+    assert result.exit_code == 0, result.output
+    assert "depth request" not in result.stderr
+
+
+def test_cli_raised_depth_limit_is_respected(monkeypatch, tmp_path):
+    result, _ = _record(monkeypatch, tmp_path, FIVE, host="127.0.0.1", port=4002, depth_limit=10)
+    assert result.exit_code == 0, result.output
+    assert "depth request" not in result.stderr
+
+
+def test_cli_sources_without_ibkr_do_not_warn_about_its_cap(monkeypatch, tmp_path):
+    result, _ = _record(monkeypatch, tmp_path, [*FIVE, "--source", "alpaca"], host="127.0.0.1", port=4002)
+    assert result.exit_code == 0, result.output
+    assert "depth request" not in result.stderr
 
 
 def test_cli_alpaca_warns_it_is_not_depth(monkeypatch, tmp_path):

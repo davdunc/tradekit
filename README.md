@@ -243,6 +243,13 @@ IBKR_HOST=127.0.0.1
 IBKR_PORT=4002
 ```
 
+IBKR caps concurrent depth requests per account, and Quote Booster packs raise the cap.
+Depth is requested in the order given, so symbols past the cap are refused (TWS 309) and
+recorded only as error markers. `depth record` warns about them before the session starts
+rather than dropping them. `IBKR_DEPTH_LIMIT` defaults to 4, which is what a paper account
+measurably accepted. TWS's own refusal text says "Max number (3)", but it accepts a fourth
+request. Set `IBKR_DEPTH_LIMIT` to what your account accepts.
+
 ---
 
 ## Integration with LifeOS

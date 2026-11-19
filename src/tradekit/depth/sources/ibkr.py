@@ -70,6 +70,24 @@ def missing_settings_message(missing: Sequence[str]) -> str:
     )
 
 
+def symbols_over_depth_limit(symbols: Sequence[str], limit: int) -> list[str]:
+    """Symbols IBKR will refuse with 309: depth is requested in order, so those past ``limit``.
+
+    Case-insensitive and de-duplicated in order, as the recorder subscribes them.
+    """
+    unique = list(dict.fromkeys(s.upper() for s in symbols))
+    return unique[limit:]
+
+
+def depth_limit_message(over: Sequence[str], limit: int) -> str:
+    return (
+        f"IBKR_DEPTH_LIMIT is {limit} concurrent depth request{'s' if limit != 1 else ''}, "
+        f"so {', '.join(over)} {'is' if len(over) == 1 else 'are'} expected to be refused (TWS 309) "
+        "and recorded only as error markers. Record fewer symbols, or set IBKR_DEPTH_LIMIT to what "
+        "the account accepts (IBKR Quote Booster raises it)"
+    )
+
+
 def marker_from_tws_error(req_id: int, code: int, message: str, contract: Any = None) -> Marker | None:
     """A TWS error/status message as an ``error`` marker; ``None`` for harmless status codes."""
     if code in STATUS_CODES:

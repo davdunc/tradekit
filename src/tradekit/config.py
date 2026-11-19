@@ -111,6 +111,10 @@ class DataSettings(BaseSettings):
     ibkr_host: str = ""
     ibkr_port: int | None = None
     ibkr_client_id: int = 17  # a wrong id fails distinctly ("client id in use"), so a default is safe
+    # Concurrent market-depth requests the account accepts (SPEC G13); Quote Booster packs raise it.
+    # Measured, not taken from TWS's text: on 2026-11-19 the paper account accepted 4 and refused
+    # the 5th onward with 309 "Max number (3) of market depth requests". Only drives a warning.
+    ibkr_depth_limit: int = Field(default=4, ge=1)
     # Alpaca, under Alpaca's own variable names (APCA_API_KEY_ID / APCA_API_SECRET_KEY).
     # Feed: "iex" (free plan, IEX only) or "sip" (Algo Trader Plus, all US exchanges).
     apca_api_key_id: str = ""

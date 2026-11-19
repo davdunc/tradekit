@@ -194,9 +194,13 @@ ten levels from AMEX, BYX, CHX, EDGEA, MEMX, NYSENAT, PEARL and others.
   `Exchanges - Depth: IEX; Top: BYX; AMEX; …`: IEX contributes full depth, the other venues
   only their top of book. The marker records this per symbol; analysis must read it
   rather than assume every venue is full depth.
-- **Concurrent depth requests are capped.** The paper account refused a fourth symbol
-  with 309 `Max number (3) of market depth requests`. Symbols past the cap are recorded as
-  `error` markers, not dropped silently, but they are not recorded.
+- **Concurrent depth requests are capped, and TWS misstates the cap.** With 12 symbols the
+  paper account accepted the first **4** and refused the 5th onward with 309
+  `Max number (3) of market depth requests`; a 4-symbol run recorded all four. Trust the
+  measured count, not the number in the message. Depth is requested in the order given,
+  so symbols past the cap appear only as `error` markers. `depth record` names them in a
+  warning before the session starts (`IBKR_DEPTH_LIMIT`, default 4) and still requests
+  them; it never truncates the list.
 - **A paper account sees live data only through sharing**, and only while the live
   username is logged out everywhere; otherwise the paper session drops to delayed data.
 
@@ -400,7 +404,7 @@ Recorded rather than hidden. Each is a rule above that nothing currently enforce
 | G10 | **3 tests fail on `main` as of `995ec5a`.** `TestCardsIngest::test_ingest_persists_a_retrievable_card`, `TestCardsIngest::test_ingest_without_narrative_still_persists_falcon_numbers`, `TestCardsTrend::test_trend_lists_both_days_date_sorted` — at least one failure's assertion output embeds today's wall-clock date ("Thu Oct 01... Overnight"), suggesting a date-relative fixture rather than a frozen one. Found incidentally while verifying the same-day blotter fallback (G9) didn't introduce a regression; not investigated further. | `pytest tests/test_cli_cards.py -q` on a clean `main` checkout → 3 failed, 26 passed | Pin the fixture's reference date (e.g. `freezegun` or an explicit `as_of`) so the test doesn't drift with the calendar |
 | G11 | **The DAS depth adapter is a placeholder, so `auto` is IBKR-only in practice.** `DASSource.connect()` raises `NotImplementedError`; every `auto` run opens with `error das skipped for this run` and records from the fallback. Finishing it needs a host running DAS Trader. | `src/tradekit/depth/sources/das.py`; live run 2026-11-19 → first marker is the DAS skip | Implement on `daslaptop` per the module docstring: SSH-forwarded CMD API, read-only, Level 2 parsed to `BookUpdate`, socket close ends `events()`, verbatim-capture fixture tests |
 | ~~G12~~ | ~~**`ibkr_host` / `ibkr_port` violate the no-fallback rule.**~~ **Closed 2026-11-19.** `config.py` defaulted them to `127.0.0.1:4002`; in the recorder a wrong port is a connection refusal, recorded as "ibkr unavailable" and a `gap_start`, while the Gateway runs fine on another port. Both now default to unset, and `IBKRSource` has no defaults of its own. | `tests/test_depth_sources.py`: settings defaults, `connect()` naming each missing variable, the check running before the SDK import, `auto` marking it once, and both CLI paths | Done: unset, `connect()` raises `PermanentlyUnavailable` naming `IBKR_HOST`/`IBKR_PORT` (reported once in `auto`); `--source ibkr` is a usage error before recording; `auto` warns on stderr. `IBKR_CLIENT_ID` keeps its default, since a wrong id fails distinctly ("client id in use") |
-| G13 | **No pre-check against the IBKR depth cap.** Symbols past the account's concurrent-depth limit (3 on the paper account) are refused one by one with 309 at run time. Visible as markers, but the user learns it only after the session started. | Live 2026-11-19: 309 `Max number (3) of market depth requests` | Warn at `depth record` start when `--source` can reach `ibkr` with more symbols than a configured cap; never truncate the list silently |
+| ~~G13~~ | ~~**No pre-check against the IBKR depth cap.**~~ **Closed 2026-11-19.** Symbols past the account's concurrent-depth limit (4 accepted on the paper account, though the 309 text says 3) were refused one by one with 309 at run time, so the user learned it only after the session started. | `tests/test_depth_sources.py`: which symbols are over, both warning wordings, no warning within the cap, with a raised limit or without IBKR, and every symbol still requested | Done: `IBKR_DEPTH_LIMIT` (default 4, measured). When `ibkr` is the source or the `auto` fallback, `depth record` warns on stderr which symbols are expected to be refused, and still requests them all. Symbols are de-duplicated so a repeat can't spend a second slot |
 
 G1 and G4 are the same failure in two places: a claim published without a check
 that the claim is true. G3 and G2 are that failure waiting to happen.
