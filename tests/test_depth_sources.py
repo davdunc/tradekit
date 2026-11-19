@@ -40,6 +40,31 @@ def test_ibkr_malformed_tick_is_dropped():
     assert book_update_from_dom("AAPL", _dom(operation=9)) is None
 
 
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [
+        # Verbatim from a live paper account without depth subscriptions (2026-11-19):
+        (2152, "Exchanges - Top: IBEOS; OVERNIGHT; Need additional market data permissions - Depth: BATS; NASDAQ"),
+        (10089, "Requested market data requires additional subscription for API. AAPL NASDAQ.NMS/DEEP"),
+        (310, "Can't find the subscribed market depth with tickerId:6"),
+        (12345, "a code nobody has seen before"),  # unknown codes are recorded too
+    ],
+)
+def test_ibkr_refusals_become_markers(code, message):
+    from tradekit.depth.sources.ibkr import marker_from_tws_error
+
+    m = marker_from_tws_error(6, code, message, SimpleNamespace(symbol="AAPL"))
+    assert m is not None and m.marker == "error" and m.source == "ibkr"
+    assert f"TWS {code}" in m.detail and "AAPL" in m.detail
+
+
+@pytest.mark.parametrize("code", [2104, 2106, 2158])
+def test_ibkr_data_farm_status_is_not_a_marker(code):
+    from tradekit.depth.sources.ibkr import marker_from_tws_error
+
+    assert marker_from_tws_error(-1, code, "Market data farm connection is OK:usfarm") is None
+
+
 def test_ibkr_without_ib_async_names_the_extra(monkeypatch):
     monkeypatch.setitem(sys.modules, "ib_async", None)  # make the import fail
     with pytest.raises(MissingExtra, match=r"tradekit-cli\[ibkr\]"):

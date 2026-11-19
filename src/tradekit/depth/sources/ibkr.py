@@ -5,8 +5,12 @@ order; set the Gateway's "Read-Only API" too. IB Gateway runs headless on Linux,
 source can run on ``toolsmith`` itself.
 
 Limits to know: depth needs IBKR market-data subscriptions for the exchanges involved, and
-IBKR caps concurrent depth subscriptions (a small number by default). A symbol refused for
-either reason is recorded as an ``error`` marker and skipped; the others keep recording.
+IBKR caps concurrent depth subscriptions (a small number by default). Every TWS message except
+known-harmless status codes is recorded as an ``error`` marker, so a refused subscription can
+never look like an empty book. Seen live (2026-11-19, paper account without depth
+subscriptions): 2152 "Need additional market data permissions - Depth: BATS; NASDAQ; ARCA; …"
+for SMART depth, and 10089 "requires additional subscription for API … NASDAQ.NMS/DEEP"
+followed by 310 for a direct exchange.
 """
 
 from __future__ import annotations
@@ -24,15 +28,10 @@ logger = logging.getLogger(__name__)
 _SIDE: dict[int, Side] = {0: "ask", 1: "bid"}
 _OP: dict[int, Op] = {0: "insert", 1: "update", 2: "delete"}
 
-#: TWS error codes that concern a depth subscription, recorded as markers rather than lost in logs.
-DEPTH_ERRORS = {
-    309,  # max number of market depth requests reached
-    310,  # can't find the subscribed market depth
-    316,  # market depth data halted
-    317,  # market depth data reset
-    354,  # requested market data is not subscribed
-    10092,  # deep book not supported for this contract / no subscription
-}
+#: TWS status messages that are not about our data: data-farm connection OK / inactive / reconnected.
+#: Every other code becomes a marker. An allowlist of *errors* missed the real refusals (2152,
+#: 10089) and recorded an empty book with no explanation; this way an unknown code is visible.
+STATUS_CODES = {2104, 2106, 2107, 2108, 2119, 2158}
 
 
 def book_update_from_dom(symbol: str, tick: Any) -> BookUpdate | None:
@@ -56,6 +55,14 @@ def book_update_from_dom(symbol: str, tick: Any) -> BookUpdate | None:
         depth_levels=FULL_DEPTH,
         venue=str(getattr(tick, "marketMaker", "") or ""),
     )
+
+
+def marker_from_tws_error(req_id: int, code: int, message: str, contract: Any = None) -> Marker | None:
+    """A TWS error/status message as an ``error`` marker; ``None`` for harmless status codes."""
+    if code in STATUS_CODES:
+        return None
+    symbol = getattr(contract, "symbol", "") or ""
+    return Marker("error", "ibkr", f"{symbol} TWS {code} (req {req_id}): {message}".strip())
 
 
 class IBKRSource:
@@ -110,9 +117,9 @@ class IBKRSource:
                     self._queue.put_nowait(update)
 
     def _on_error(self, req_id, code, message, contract=None) -> None:
-        if code in DEPTH_ERRORS:
-            symbol = getattr(contract, "symbol", "") or ""
-            self._queue.put_nowait(Marker("error", self.name, f"{symbol} TWS {code}: {message}".strip()))
+        marker = marker_from_tws_error(req_id, code, message, contract)
+        if marker is not None:
+            self._queue.put_nowait(marker)
 
     async def events(self) -> AsyncIterator[Event]:
         while True:
