@@ -19,11 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Releases ship on GitHub, not PyPI** — `release.yml` now builds the wheel and sdist
-  for each `v*` tag and attaches them to the GitHub release (it can also be run by hand
-  for an existing tag). The PyPI publish step is gone: the `tradekit` name on PyPI
-  belongs to an unrelated project, so every publish failed. Install from GitHub as the
-  README describes. Renaming the distribution is tracked in #30.
+- **The distribution is now `tradekit-cli`** (#30). `tradekit` on PyPI belongs to an
+  unrelated project, so `pip install tradekit` installed the wrong package and every
+  PyPI publish failed. Only the distribution name changed: the command is still
+  `tradekit` and the import package is still `tradekit`. The RPM is `tradekit-cli` too,
+  with `Provides`/`Obsoletes: tradekit` so existing installs upgrade in place.
+  uv tools installed under the old name need a one-time reinstall (README, "Upgrading an
+  existing machine").
+- **Releases ship on GitHub and PyPI** — `release.yml` builds the wheel and sdist for
+  each `v*` tag, attaches them to the GitHub release (it can also be run by hand for an
+  existing tag), then publishes them to PyPI as `tradekit-cli` through trusted
+  publishing. Tags from before the rename are not published.
 
 ## [0.5.0] — 2026-11-01
 

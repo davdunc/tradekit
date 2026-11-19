@@ -1,5 +1,7 @@
 [project]
-name = "tradekit"
+# Distribution name only: the import package and the command stay `tradekit`. The
+# `tradekit` name on PyPI belongs to an unrelated project (#30).
+name = "tradekit-cli"
 version = "0.5.0"
 description = "Personal trading infrastructure for pre-market screening, technical analysis, and trade setup evaluation"
 readme = "README.md"
@@ -56,6 +58,10 @@ Issues = "https://github.com/davdunc/tradekit/issues"
 
 [project.scripts]
 tradekit = "tradekit.cli:cli"
+
+[tool.uv.build-backend]
+# uv_build derives the module from the project name (tradekit_cli); the package is `tradekit`.
+module-name = "tradekit"
 
 [dependency-groups]
 dev = [

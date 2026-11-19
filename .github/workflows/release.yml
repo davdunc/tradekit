@@ -1,10 +1,15 @@
 name: Release
 
-# Builds the wheel + sdist for a version tag and attaches them to the GitHub release
-# (created from the tag's CHANGELOG section if it doesn't exist yet).
+# Builds the wheel + sdist for a version tag, attaches them to the GitHub release
+# (created from the tag's CHANGELOG section if it doesn't exist yet), then publishes
+# them to PyPI as `tradekit-cli` through trusted publishing.
 #
-# Not published to PyPI: the `tradekit` name there belongs to an unrelated project.
-# Install from GitHub instead — see README "Installation" and issue #30 (rename).
+# The distribution was renamed from `tradekit`, which on PyPI belongs to an unrelated
+# project (#30). Tags from before the rename still build a `tradekit` distribution, so
+# the PyPI job only runs when the build produced `tradekit_cli` files.
+#
+# One-time setup on pypi.org: a (pending) trusted publisher for project `tradekit-cli`,
+# owner `davdunc`, repository `tradekit`, workflow `release.yml`, environment `pypi`.
 
 on:
   push:
@@ -26,6 +31,8 @@ jobs:
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
       GH_TOKEN: ${{ github.token }}
+    outputs:
+      publishable: ${{ steps.dist.outputs.publishable }}
 
     steps:
       - uses: actions/checkout@v4
@@ -58,3 +65,41 @@ jobs:
             awk -v h="## [${TAG#v}]" 'index($0, h) == 1 {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notes.md
             gh release create "$TAG" dist/* --verify-tag --title "tradekit ${TAG#v}" --notes-file notes.md
           fi
+
+      - name: Check the distribution name
+        id: dist
+        run: |
+          if ls dist/tradekit_cli-* >/dev/null 2>&1; then
+            echo "publishable=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publishable=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Built distribution is not tradekit-cli (pre-#30 tag?); skipping PyPI."
+          fi
+
+      - name: Keep the build for the PyPI job
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    name: Publish to PyPI (tradekit-cli)
+    needs: release
+    if: needs.release.outputs.publishable == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/tradekit-cli/
+    permissions:
+      id-token: write  # trusted publishing; no API token is stored anywhere
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true  # re-running a release must not fail on files already uploaded

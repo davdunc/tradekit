@@ -15,9 +15,17 @@ if _os.path.isdir(_VENDOR) and _VENDOR not in _sys.path:
 
 # Single source of truth for the version is pyproject.toml, read here through the
 # installed distribution's metadata. Never hand-maintain a second copy.
-try:
-    __version__ = _pkg_version("tradekit")
-except _PkgNotFound:  # source checkout with no install
+#
+# The distribution is `tradekit-cli` (#30); the import package is still `tradekit`.
+# The old name is tried second so an install made before the rename still reports
+# its version instead of 0.0.0.dev0.
+for _dist in ("tradekit-cli", "tradekit"):
+    try:
+        __version__ = _pkg_version(_dist)
+        break
+    except _PkgNotFound:
+        continue
+else:  # source checkout with no install
     __version__ = "0.0.0.dev0"
 
-del _os, _sys, _VENDOR, _pkg_version, _PkgNotFound
+del _os, _sys, _VENDOR, _pkg_version, _PkgNotFound, _dist
