@@ -46,7 +46,14 @@ FETCH_CALLS = {
 
 def violations(path: pathlib.Path) -> list[str]:
     found = []
-    for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+    # Python source is UTF-8 (PEP 3120). read_text() without an encoding uses the locale's,
+    # which is cp1252 on Windows and failed on gex.py's non-ASCII characters in CI.
+    source = path.read_text(encoding="utf-8")
+    try:
+        tree = ast.parse(source, filename=str(path))
+    except SyntaxError as exc:  # report it as this module's failure, not a crash of the whole test
+        return [f"line {exc.lineno}: SyntaxError: {exc.msg}"]
+    for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name.split(".")[0] in NETWORK or alias.name.startswith(FORBIDDEN_TRADEKIT):
@@ -84,5 +91,18 @@ def test_analysis_module_does_no_io(path):
 )
 def test_the_checker_catches_each_kind_of_violation(tmp_path, source, caught):
     module = tmp_path / "bad.py"
-    module.write_text(source)
+    module.write_text(source, encoding="utf-8")
     assert any(caught in v for v in violations(module))
+
+
+def test_non_ascii_source_is_read_as_utf8(tmp_path):
+    """The Windows CI failure: a module with an em dash, read with the locale's codec."""
+    module = tmp_path / "dash.py"
+    module.write_bytes("# gamma \u2014 dealers, 0\u20131\nx = 1\n".encode())
+    assert violations(module) == []
+
+
+def test_unparseable_module_is_reported_not_crashed(tmp_path):
+    module = tmp_path / "broken.py"
+    module.write_text("def f(:\n    pass\n", encoding="utf-8")
+    assert violations(module)[0].startswith("line 1: SyntaxError")
