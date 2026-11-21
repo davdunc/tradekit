@@ -930,7 +930,8 @@ def comps(tickers, direction: str, sector: str | None, source: str | None):
     """
     from rich.table import Table
 
-    from tradekit.analysis.comps import COMP_MAP, build_comps_report
+    from tradekit.analysis.comps import COMP_MAP, build_comps_report, comps_symbols
+    from tradekit.data.batch import fetch_each
 
     # Checked against the comp map itself, so a sector added there is accepted here too.
     if sector is not None and sector.lower() not in COMP_MAP:
@@ -939,9 +940,19 @@ def comps(tickers, direction: str, sector: str | None, source: str | None):
         )
     provider = get_provider(source)
     direction = direction.lower()
+    # Fetched here and passed in: analysis does no I/O (#49). Shared across tickers, so
+    # QQQ and SPY are fetched once per command, not once per ticker.
+    quotes: dict[str, dict] = {}
+    premarket: dict[str, dict] = {}
 
     for ticker in tickers:
-        report = build_comps_report(provider, ticker, sector=sector)
+        needed = comps_symbols(ticker, sector)
+        report = None
+        if needed is not None:
+            quote_symbols, premarket_symbols = needed
+            fetch_each(provider.get_quote, quote_symbols, into=quotes)
+            fetch_each(provider.get_premarket, premarket_symbols, into=premarket)
+            report = build_comps_report(ticker, quotes, premarket, sector=sector)
         if report is None:
             console.print(
                 f"[yellow]{ticker.upper()}: no sector mapping — add it to "
@@ -2885,10 +2896,11 @@ def gex(ticker: str, max_dte: int, rate: float, as_json: bool):
     import json
 
     from tradekit.analysis.gex import GEXError, compute_gex, format_markdown, to_dict
+    from tradekit.data.cboe import CBOEError, fetch_cboe_chain
 
     try:
-        result = compute_gex(ticker, max_dte, rate)
-    except GEXError as exc:
+        result = compute_gex(fetch_cboe_chain(ticker), ticker=ticker, max_dte=max_dte, rate=rate)
+    except (CBOEError, GEXError) as exc:
         raise click.ClickException(str(exc)) from exc
 
     if as_json:
@@ -2930,6 +2942,7 @@ def earnings(ticker: str, event_date: str | None, timing: str | None, as_json: b
 
     from tradekit.analysis.earnings import implied_move
     from tradekit.analysis.gex import GEXError
+    from tradekit.data.cboe import CBOEError, fetch_cboe_chain
 
     ticker = ticker.upper()
     timing = {"bmo": "BMO", "amc": "AMC"}.get((timing or "").lower(), timing)
@@ -2961,8 +2974,8 @@ def earnings(ticker: str, event_date: str | None, timing: str | None, as_json: b
         source = "Finviz Elite"
 
     try:
-        result = implied_move(ticker, day, timing)  # type: ignore[arg-type]
-    except GEXError as exc:
+        result = implied_move(fetch_cboe_chain(ticker), ticker=ticker, event_date=day, timing=timing)  # type: ignore[arg-type]
+    except (CBOEError, GEXError) as exc:
         raise click.ClickException(f"Option chain unavailable: {exc}") from exc
     result["source"] = source
 

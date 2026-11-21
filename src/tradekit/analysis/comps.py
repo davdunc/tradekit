@@ -26,6 +26,7 @@ Freshness (#48). A signal with no data is *unavailable*, never a 0.00% move:
 
 import datetime as dt
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
 
@@ -195,32 +196,30 @@ def _market_time(value) -> dt.datetime | None:
     return None
 
 
-def _quote_change(provider, symbol: str) -> tuple[float | None, dt.datetime | None]:
-    """Close-to-close change (%) and the quote's market time, when the provider gives one."""
-    try:
-        quote = provider.get_quote(symbol)
-        price = quote.get("price") or 0
-        prev = quote.get("prev_close") or 0
-        if price and prev:
-            return (price - prev) / prev * 100, _market_time(quote.get("market_time"))
-    except Exception as e:
-        logger.warning("comps: quote failed for %s: %s", symbol, e)
+def _quote_change(quote: dict | None) -> tuple[float | None, dt.datetime | None]:
+    """Close-to-close change (%) and the quote's market time, from a provider quote dict."""
+    quote = quote or {}
+    price = quote.get("price") or 0
+    prev = quote.get("prev_close") or 0
+    if price and prev:
+        return (price - prev) / prev * 100, _market_time(quote.get("market_time"))
     return None, None
 
 
-def _premarket_gap(provider, symbol: str) -> tuple[float | None, str]:
-    """Premarket gap (%), or None and why. ``has_premarket`` false means no session, not 0%."""
-    try:
-        pm = provider.get_premarket(symbol)
-        if pm.get("has_premarket") is False:
-            return None, "no premarket session"
-        gap = pm.get("gap_pct")
-        if gap is None:
-            return None, "no premarket data"
-        return float(gap), ""
-    except Exception as e:
-        logger.warning("comps: premarket failed for %s: %s", symbol, e)
+def _premarket_gap(pm: dict | None) -> tuple[float | None, str]:
+    """Premarket gap (%), or None and why, from a provider premarket dict.
+
+    ``has_premarket`` false means no session, not 0%. ``{"error": ...}`` is a failed request
+    (see ``tradekit.data.batch.fetch_each``).
+    """
+    if not pm or "error" in pm:
         return None, "premarket request failed"
+    if pm.get("has_premarket") is False:
+        return None, "no premarket session"
+    gap = pm.get("gap_pct")
+    if gap is None:
+        return None, "no premarket data"
+    return float(gap), ""
 
 
 def _overnight_signal(label: str, symbol: str, pct: float | None, when: dt.datetime | None, close: dt.datetime):
@@ -235,45 +234,77 @@ def _overnight_signal(label: str, symbol: str, pct: float | None, when: dt.datet
     return Signal(f"{label} overnight", pct, symbol, note=stamp)
 
 
+def _entry(ticker: str, sector: str | None) -> tuple[str, dict] | None:
+    """The COMP_MAP key and entry for ``ticker``; None if unmapped. Unknown ``sector`` raises."""
+    if sector is not None and sector.lower() not in COMP_MAP:
+        raise ValueError(f"unknown sector {sector!r}; choose from {', '.join(sorted(COMP_MAP))}")
+    key = (sector or TICKER_SECTOR.get(ticker.upper()) or "").lower()
+    entry = COMP_MAP.get(key)
+    return None if entry is None else (key, entry)
+
+
+def comps_symbols(ticker: str, sector: str | None = None) -> tuple[list[str], list[str]] | None:
+    """The symbols a report needs: (quote symbols, premarket symbols). None if unmapped.
+
+    The caller fetches these (``get_quote`` and ``get_premarket``) and passes the results to
+    :func:`build_comps_report`. This module does no I/O (#49). An explicit ``sector`` that
+    isn't a COMP_MAP key raises ValueError.
+    """
+    found = _entry(ticker, sector)
+    if found is None:
+        return None
+    _, entry = found
+    quotes = [symbol for _, symbol in entry["comps"]]
+    premarket = [s for s in (entry.get("etf"), entry.get("inverse")) if s] + ["QQQ", "SPY"]
+    return quotes, premarket
+
+
 def build_comps_report(
-    provider, ticker: str, sector: str | None = None, *, now: dt.datetime | None = None
+    ticker: str,
+    quotes: Mapping[str, dict],
+    premarket: Mapping[str, dict],
+    sector: str | None = None,
+    *,
+    now: dt.datetime | None = None,
 ) -> CompsReport | None:
-    """Build the sector/overnight comps report for one candidate ticker.
+    """Build the sector/overnight comps report for one candidate ticker, from fetched data.
+
+    ``quotes`` and ``premarket`` map each symbol from :func:`comps_symbols` to what the
+    provider's ``get_quote`` / ``get_premarket`` returned, or to ``{"error": ...}`` for a
+    failed request. A symbol that is absent counts as unavailable. No I/O happens here.
 
     Returns None when the ticker has no sector mapping and no ``sector`` was given. An
     explicit ``sector`` that isn't a COMP_MAP key raises ValueError: returning None for it too
     made a mistyped sector read as an unmapped ticker.
     """
     ticker = ticker.upper()
-    if sector is not None and sector.lower() not in COMP_MAP:
-        raise ValueError(f"unknown sector {sector!r}; choose from {', '.join(sorted(COMP_MAP))}")
-    key = (sector or TICKER_SECTOR.get(ticker) or "").lower()
-    entry = COMP_MAP.get(key)
-    if entry is None:
+    found = _entry(ticker, sector)
+    if found is None:
         return None
+    key, entry = found
 
     report = CompsReport(ticker=ticker, sector=key, sector_label=entry["label"])
     close = last_us_close(now or dt.datetime.now(ET))
 
     for label, symbol in entry["comps"]:
-        pct, when = _quote_change(provider, symbol)
+        pct, when = _quote_change(quotes.get(symbol))
         report.signals.append(_overnight_signal(label, symbol, pct, when, close))
 
     etf = entry.get("etf")
     if etf:
-        pct, why = _premarket_gap(provider, etf)
+        pct, why = _premarket_gap(premarket.get(etf))
         report.signals.append(Signal(f"{etf} premarket", pct, "sector ETF", note=why))
 
     inverse = entry.get("inverse")
     if inverse:
-        pct, why = _premarket_gap(provider, inverse)
+        pct, why = _premarket_gap(premarket.get(inverse))
         # An inverse ETF gapping UP is a bearish sector tell: flip its sign
         # so the Signal's bearish/bullish reading stays consistent.
         flipped = -pct if pct is not None else None
         report.signals.append(Signal(f"{inverse} tell (sign flipped)", flipped, "inverse ETF", note=why))
 
-    qqq, qqq_why = _premarket_gap(provider, "QQQ")
-    spy, spy_why = _premarket_gap(provider, "SPY")
+    qqq, qqq_why = _premarket_gap(premarket.get("QQQ"))
+    spy, spy_why = _premarket_gap(premarket.get("SPY"))
     if qqq is not None and spy is not None:
         # Tech-led skew: meaningful only when QQQ leads SPY; expressed as
         # QQQ's own gap so the threshold logic applies.

@@ -73,6 +73,15 @@ cli        -> everything
    no keys and no fixtures — the property that keeps `tests/test_analysis.py`
    fast and hermetic. Breaking it is the single most expensive change you can
    make to this codebase's testability.
+
+   **No I/O of any kind**, not only no `data` import. Until #49, `gex` opened HTTP
+   connections itself, `earnings` fetched through it, and `comps` called a provider
+   passed in. None of that broke the import graph. Fetching now happens in `data/`
+   (`data/cboe.py`, `data/batch.py`) or in `cli.py`, and the analysis functions take
+   the fetched values. **Enforced** by `tests/test_analysis_purity.py`, which parses
+   every `analysis/` module. It fails on any network library, any import from
+   `tradekit.data`, `cli`, `reports` or `screener`, and any provider-style call
+   (`get_quote`, `get_premarket`, `get_history`, `urlopen`, ...).
 3. **`reports` never imports `screener` or `analysis`.** Rendering receives
    finished objects; it does not compute what to render.
 4. **Nothing imports `cli`.** If a module needs something in `cli.py`, that
@@ -403,7 +412,7 @@ Recorded rather than hidden. Each is a rule above that nothing currently enforce
 |---|---|---|---|
 | G1 | **`blotter` is documented but unreachable.** PR #2 advertises `tradekit blotter DATE`; `reports/blotter.py` ships; no `@cli.command()` registers it and `--help` does not list it. | `grep blotter src/tradekit/cli.py` returns nothing | Register the command, or remove the claim |
 | ~~G2~~ | ~~**Version stated in four places, all disagreeing.**~~ **Closed 2026-08-29.** `__version__` now derives from installed metadata; `pyproject.toml`, `packaging/tradekit.spec` and `CHANGELOG.md` all read 0.3.0. | `pyproject`/`spec`/`CHANGELOG` all 0.3.0; `tradekit.__version__` derived | Remaining: a CI check asserting the three files still agree — otherwise this reopens (see G4) |
-| G3 | **Import direction is documented, not enforced.** Nothing fails if `analysis` imports `data` tomorrow. | — | Add an import-direction test |
+| G3 | **Import direction is documented, not enforced** for most layers. *`analysis` half closed 2026-11-21 (#49):* `tests/test_analysis_purity.py` fails when `analysis` imports `data`, `cli`, `reports` or `screener`, uses a network library, or calls a provider. | Nothing yet fails if, say, `reports` imports `screener` or `paths` imports `config` | Extend the same AST check to the rest of the import table |
 | G4 | **RPM `Requires:` drifts silently** from `pyproject.toml`. *`Commands:` half closed 2026-11-10:* `tests/test_packaging.py` fails when the `%description` list and `cli.commands` disagree (it caught `cards` and `gex` missing). | matplotlib was missing | Extend the test to compare `Requires:` with `pyproject.toml` dependencies |
 | G5 | **`cli.py` is 3,294 lines** (2026-11-19), 27% of the codebase, and holds logic that belongs in `screener` and `reports`. | — | Extract incrementally; no new business logic in `cli.py` |
 | G6 | **mypy: 156 errors across 57 files.** | `mypy src/tradekit` | Ratchet, do not flip |

@@ -88,6 +88,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`analysis/` does no I/O** (#49). The SPEC calls `analysis` pure computation, but three
+  modules fetched market data themselves.
+  - **CBOE chain:** `fetch_cboe_chain` moved from `analysis.gex` to the new `data/cboe.py`
+    (raising `CBOEError`). `compute_gex(chain, *, ticker, ...)` and
+    `implied_move(chain, *, ticker, event_date, timing)` now take the chain instead of
+    fetching it. Passing a ticker where the chain belongs raises `TypeError`.
+  - **`comps`:** `comps_symbols(ticker, sector)` lists what to fetch, and
+    `build_comps_report(ticker, quotes, premarket, ...)` builds the report from fetched
+    provider dicts. The new `data/batch.py` `fetch_each` records a failed request as
+    `{"error": ...}`. The CLI fetches shared symbols (QQQ, SPY) once per command, not once
+    per ticker.
+  - **Enforced:** `tests/test_analysis_purity.py` parses every `analysis/` module and fails on
+    network libraries, imports of `data`/`cli`/`reports`/`screener`, and provider calls. It
+    flags `comps` and `gex` on the previous code.
+
 - **The distribution is now `tradekit-cli`** (#30). `tradekit` on PyPI belongs to an
   unrelated project, so `pip install tradekit` installed the wrong package and every
   PyPI publish failed. Only the distribution name changed: the command is still
