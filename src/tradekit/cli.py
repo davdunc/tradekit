@@ -999,6 +999,7 @@ def comps(tickers, direction: str, sector: str | None, source: str | None):
 @source_option
 def second_day(min_change: float, min_vol_ratio: float, source: str | None):
     """Find 2nd-day play candidates from yesterday's big movers."""
+    import pandas as pd
     from rich.table import Table
 
     from tradekit.screener.premarket import scan_previous_movers
@@ -1029,14 +1030,15 @@ def second_day(min_change: float, min_vol_ratio: float, source: str | None):
     for i, row in df.iterrows():
         chg = row["prev_change_pct"]
         chg_style = "green" if chg > 0 else "red"
-        pre_gap = row.get("pre_gap_pct", 0)
-        pre_style = "green" if pre_gap > 0 else "red" if pre_gap < 0 else "white"
+        pre_gap = row.get("pre_gap_pct")
+        no_gap = pd.isna(pre_gap)  # None or NaN: no premarket, shown as n/a (#51)
+        pre_style = "white" if no_gap else "green" if pre_gap > 0 else "red" if pre_gap < 0 else "white"
 
         vol_ratio = row.get("volume_ratio", 0)
         vol_style = "bold green" if vol_ratio >= 3 else "green" if vol_ratio >= 2 else "yellow"
 
-        pre_price = row.get("pre_price", 0)
-        pre_str = f"${pre_price:.2f}" if pre_price else "-"
+        pre_price = row.get("pre_price")
+        pre_str = "-" if pd.isna(pre_price) or not pre_price else f"${pre_price:.2f}"
 
         table.add_row(
             str(int(i) + 1),
@@ -1046,7 +1048,7 @@ def second_day(min_change: float, min_vol_ratio: float, source: str | None):
             f"[{chg_style}]{chg:+.1f}%[/{chg_style}]",
             f"[{vol_style}]{vol_ratio:.1f}x[/{vol_style}]",
             pre_str,
-            f"[{pre_style}]{pre_gap:+.1f}%[/{pre_style}]" if pre_price else "-",
+            "[dim]n/a[/dim]" if no_gap else f"[{pre_style}]{pre_gap:+.1f}%[/{pre_style}]",
         )
 
     console.print(table)
@@ -1489,6 +1491,8 @@ def _build_second_day_rows(
     yt_context: dict | None = None,
 ) -> list[dict]:
     """Convert second-day DataFrame into game plan table rows with levels."""
+    import pandas as pd
+
     from tradekit.analysis.levels import find_support_resistance, get_nearest_levels
 
     yt_ticker_notes = (yt_context or {}).get("ticker_notes", {})
@@ -1513,14 +1517,16 @@ def _build_second_day_rows(
             logger.warning("Failed levels for %s: %s", ticker, e)
 
         chg = row.get("prev_change_pct", 0)
-        pre_gap = row.get("pre_gap_pct", 0)
+        pre_gap = row.get("pre_gap_pct")
         notes_parts = []
         if chg:
             notes_parts.append(f"prev {chg:+.1f}%")
         vol_ratio = row.get("volume_ratio", 0)
         if vol_ratio:
             notes_parts.append(f"vol {vol_ratio:.1f}x")
-        if pre_gap:
+        if pd.isna(pre_gap):
+            notes_parts.append("pre-mkt n/a")
+        elif pre_gap:
             notes_parts.append(f"pre-mkt {pre_gap:+.1f}%")
 
         yt_note = yt_ticker_notes.get(ticker, "")

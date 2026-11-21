@@ -184,13 +184,17 @@ class MassiveProvider:
 
         pre_price = session.get("price", 0) or session.get("close", 0)
         prev_close = prev_day.get("c", 0)
-        gap_pct = ((pre_price - prev_close) / prev_close * 100) if prev_close else 0
+        # Contract shape (#51): no price or no prior close means no gap, not 0. Whether `session`
+        # is the premarket at all is unverified, and the response isn't parsed correctly yet (#52).
+        has_premarket = bool(pre_price)
+        gap_pct = (pre_price - prev_close) / prev_close * 100 if has_premarket and prev_close else None
 
         return {
             "ticker": ticker,
-            "pre_price": pre_price,
+            "has_premarket": has_premarket,
+            "pre_price": pre_price or None,
             "prev_close": prev_close,
-            "gap_pct": round(gap_pct, 2),
+            "gap_pct": round(gap_pct, 2) if gap_pct is not None else None,
             "pre_volume": session.get("volume", 0),
             "avg_volume": 0,
             "name": ticker_data.get("name", ticker),
@@ -213,7 +217,9 @@ class MassiveProvider:
         results = []
         for ticker in tickers:
             try:
-                results.append(self.get_premarket(ticker))
+                data = self.get_premarket(ticker)
+                if data.get("has_premarket"):  # as YahooProvider does: no premarket, no row
+                    results.append(data)
             except Exception as e:
                 logger.warning("Failed to fetch pre-market for %s from Massive: %s", ticker, e)
         return results

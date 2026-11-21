@@ -114,6 +114,15 @@ Current implementations: `yahoo` (default), `massive`, `backtest` (S3 flat files
 delayed data has to make that visible to callers. A quote whose lag is unknown at
 the call site is how a 15-minute-old price ends up on a live order ticket.
 
+**Missing is `None`, never `0`.** `get_premarket()` returns `has_premarket`,
+`gap_pct` and `pre_price` from every provider (documented on
+`DataProvider.get_premarket`). With no premarket price, `gap_pct` and `pre_price`
+are `None`. A 0% gap is a real, flat open, and a provider that reported "no data"
+as `0` made a closed market read as a neutral one (#48, #51). Consumers render a
+missing value as `n/a`, and filters exclude it on purpose. In a DataFrame, `None`
+becomes `NaN`, which is truthy, so `x or fallback` is the wrong guard: test with
+`pd.isna`. `tests/test_premarket_contract.py` checks every provider and consumer.
+
 **`get_history` cannot serve an explicit historical date — see G9.** It takes only
 a relative `period` anchored to `datetime.now()`. A caller that needs bars for one
 specific past date (not "the last N days") cannot use the provider layer at all

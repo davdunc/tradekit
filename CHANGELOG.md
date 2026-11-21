@@ -111,6 +111,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Premarket gap contract: "no premarket" is `None`, never a 0% gap** (#51).
+  `get_premarket()` now returns `has_premarket`, `gap_pct` and `pre_price` from every
+  provider. With no premarket price, `gap_pct` and `pre_price` are `None`, so a closed market
+  can't read as a flat one (the #48 bug) wherever the gap is used.
+  - **Yahoo:** returns `None`, not `0`, and ignores a leftover `preMarketChangePercent` when
+    there is no premarket price.
+  - **Finviz Elite:** adds the contract keys. It has no premarket data, so `False`/`None`.
+  - **Massive:** returns the contract's shape, and its batch skips tickers without a
+    premarket, as Yahoo's does. Its response parsing is broken separately (#52).
+  - **Consumers:** the second-day screener no longer fills in `0`. The `second-day` table,
+    the game-plan notes, and the terminal and markdown scan reports show a missing gap as
+    `n/a`, not `+0.0%` or `nan%`. Both reports fall back to the regular price when there is
+    no premarket price, instead of printing `$nan`.
+  - **Filters:** `gap_filter` excludes missing gaps on purpose. `price_filter` uses the
+    regular price when the premarket price is missing, instead of dropping the row.
 - **`tradekit comps` read missing data as a neutral 0.00% move** (#48). Yahoo reports "no
   premarket session" as `gap_pct` 0, so before 04:00 ET and on weekends the sector ETF,
   inverse ETF and index skew all read `+0.00% neutral`. With only the two Asia comps live,

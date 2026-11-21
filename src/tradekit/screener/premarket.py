@@ -155,7 +155,7 @@ def scan_previous_movers(
 
     Returns:
         DataFrame with columns: ticker, name, prev_close, prev_change_pct,
-        volume_ratio, pre_price, pre_gap_pct.
+        volume_ratio, pre_price, pre_gap_pct (None without a premarket).
     """
     if provider is None:
         provider = YahooProvider()
@@ -201,8 +201,8 @@ def scan_previous_movers(
                     "prev_close": prev_close,
                     "prev_change_pct": round(change_pct, 2),
                     "volume_ratio": round(vol_ratio, 2),
-                    "pre_price": pre.get("pre_price", 0),
-                    "pre_gap_pct": pre.get("gap_pct", 0),
+                    "pre_price": pre.get("pre_price"),
+                    "pre_gap_pct": pre.get("gap_pct"),  # None without a premarket (#51), never 0
                     "has_premarket": pre.get("has_premarket", False),
                 }
             )
