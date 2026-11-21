@@ -76,8 +76,8 @@ scoring, and bull/bear LLM-driven debate setups. It integrates with LifeOS
 and S3-compatible flat-file market data backends.
 
 Commands: analyze, cards, debate, depth, earnings, gameplan, gex, groups, init,
-levels, morning, news, publish-review, regime, report, rs, sandwich, scan,
-second-day, size, watchlist, weekly-review.
+levels, morning, news, overnight, publish-review, regime, report, rs, sandwich,
+scan, second-day, size, watchlist, weekly-review.
 
 On-disk paths follow the XDG Base Directory specification — data under
 $XDG_DATA_HOME, cache under $XDG_CACHE_HOME, state under $XDG_STATE_HOME. Two

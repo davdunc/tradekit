@@ -209,6 +209,38 @@ banner on stdout, so `> plan.md` would capture that too.
 
 Run `tradekit --help` for the full command list.
 
+### Checking overnight risk before a carry
+
+A stop limits an intraday loss, but the next session can open straight past it.
+`tradekit overnight` sizes a carry against the move the options market prices, not just
+the stop distance:
+
+```sh
+tradekit overnight AAPL --stop 335 --risk 100 --shares 20              # live price and IV from IB Gateway
+tradekit overnight AAPL --stop 335 --risk 100 --sessions 1 --json      # a weekend counts as one session
+tradekit overnight XYZ --stop 9.40 --risk 50 --price 10 --iv 0.65      # no broker: give price and IV
+```
+
+- **Expected move:** 1σ = price × IV × √(sessions ÷ 252).
+- **Loss per share on a carry:** max(stop distance, `--gap-sigmas` × 1σ). `--gap-sigmas`
+  defaults to 2, about 95% of normal outcomes.
+- **Carry size:** `--risk` ÷ that loss per share.
+- **Verdict:** `CARRY`, `REDUCE` to the carry size, `NO CARRY`, or `SIZE` when no
+  `--shares` is given.
+- **Warnings:** the stop sits inside a 1σ move, or IV ÷ HV ≥ 1.25, meaning the options are
+  pricing an event, so check for earnings or news. Warnings never change the verdict.
+- **Shorts only:**
+  - **Ex-dividend:** flags an ex-dividend date inside the hold, with what the position would
+    pay. A short held at the close before the ex-date pays it.
+  - **Borrow:** flags hard-to-borrow, no shares to borrow, or a position larger than the
+    shares IBKR shows available. A carried short can be recalled and bought in at the open.
+  - **Missing data:** without that data (for example with `--price`/`--iv`), each check is
+    reported as *not checked*. It doesn't pass silently.
+
+Price, 30-day IV and HV, the next dividend and the borrow level come from IB Gateway (`tradekit-cli[ibkr]`, `IBKR_HOST`,
+`IBKR_PORT`; client id `IBKR_CLIENT_ID + 1`, so it can run next to `depth record`). The output
+says whether the data was live or frozen after the close, and delayed data is refused.
+
 ### Recording order-book depth
 
 Order-book depth can't be backfilled, so `tradekit depth record` captures it as it happens
