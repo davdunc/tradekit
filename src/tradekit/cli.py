@@ -785,6 +785,97 @@ def size(grade, daily_stop, entry, stop_price, strategy, vwap, max_risk, atr, mi
     console.print(f"\n  [bold {color}]{status}[/bold {color}] — {message}\n")
 
 
+@cli.command()
+@click.argument("ticker")
+@click.option(
+    "--stop", "stop_price", type=float, required=True, help="Invalidation (stop) price; its side sets long or short."
+)
+@click.option("--risk", type=float, required=True, help="Planned risk for the carry (the trade's 1R), in dollars.")
+@click.option("--shares", type=click.IntRange(min=0), default=None, help="Position to carry. Omit to get a carry size.")
+@click.option(
+    "--sessions",
+    type=click.FloatRange(min=0, min_open=True),
+    default=1.0,
+    show_default=True,
+    help="Trading sessions held past the close (a weekend counts as one).",
+)
+@click.option(
+    "--gap-sigmas",
+    type=click.FloatRange(min=0),
+    default=2.0,
+    show_default=True,
+    help="How far, in standard deviations, the next open may land against you.",
+)
+@click.option("--price", type=float, default=None, help="Price; skips IB Gateway when given with --iv.")
+@click.option("--iv", type=float, default=None, help="Implied volatility, annualized (0.30 = 30%).")
+@click.option("--hv", type=float, default=None, help="Historical volatility, annualized; enables the event check.")
+@click.option("--json", "as_json", is_flag=True, help="Emit the check as JSON.")
+def overnight(ticker, stop_price, risk, shares, sessions, gap_sigmas, price, iv, hv, as_json):
+    """Overnight-risk check before carrying a position past the close.
+
+    A stop bounds an intraday loss, but the next session can open straight past it.
+    The options market prices that move: 1σ = price × IV × √(sessions ÷ 252). The
+    carry is sized so that an open GAP-SIGMAS σ against you stays inside --risk:
+    shares = risk ÷ max(stop distance, GAP-SIGMAS × σ).
+
+    Price, IV and HV come from IB Gateway (IBKR_HOST, IBKR_PORT; tradekit-cli[ibkr])
+    unless --price and --iv are both given.
+    """
+    import json
+
+    from tradekit.analysis.overnight import OvernightError, check_carry
+
+    ticker = ticker.upper()
+    source = "given"
+    if price is None or iv is None:
+        from tradekit.data.ibkr import IBKRSnapshotError, fetch_vol_snapshot
+
+        try:
+            snap = fetch_vol_snapshot(ticker)
+        except IBKRSnapshotError as e:
+            raise click.ClickException(str(e)) from e
+        price = price if price is not None else snap.price
+        iv = iv if iv is not None else snap.iv
+        hv = hv if hv is not None else snap.hv
+        source = f"IB Gateway ({snap.freshness})"
+
+    try:
+        result = check_carry(
+            ticker, price, stop_price, risk, iv, hv=hv, shares=shares, sessions=sessions, gap_sigmas=gap_sigmas
+        )
+    except OvernightError as e:
+        raise click.UsageError(str(e)) from e
+
+    if as_json:
+        click.echo(json.dumps({**result.to_dict(), "source": source}, indent=2))
+        return
+
+    # Plain click.echo, as in `earnings`: rich would colour the digits and could wrap numbers apart.
+    r = result
+    hv_part = f" | HV {r.hv:.1%} (IV/HV {r.iv_hv_ratio:.2f})" if r.hv else " | HV n/a"
+    session_word = "session" if r.sessions == 1 else "sessions"
+    click.echo(f"{r.symbol} overnight check — {r.direction.upper()}, {r.sessions:g} {session_word} — data: {source}")
+    click.echo(f"  Price {r.price:,.2f} | stop {r.stop:,.2f} ({r.stop_distance:,.2f} away) | IV {r.iv:.1%}{hv_part}")
+    click.echo(
+        f"  Expected move 1σ {r.one_sigma:,.2f} ({r.one_sigma / r.price:.2%}) · {r.gap_sigmas:g}σ gap {r.gap_move:,.2f}"
+    )
+    click.echo(
+        f"  Loss per share on a gap: {r.loss_per_share:,.2f}"
+        f" → carry size {r.carry_shares:,} shares for {r.risk:,.2f} risk"
+    )
+    if r.shares is not None:
+        click.echo(f"  Position {r.shares:,} shares → a {r.gap_sigmas:g}σ gap costs {r.gap_loss:,.2f}")
+    for w in r.warnings:
+        click.echo(f"  ! {w}")
+    verdicts = {
+        "CARRY": "the position fits its risk even if it gaps",
+        "REDUCE": f"cut to {r.carry_shares:,} shares before the close",
+        "NO CARRY": "not one share fits the risk on a gap: close it",
+        "SIZE": f"carry at most {r.carry_shares:,} shares",
+    }
+    click.echo(f"  {r.verdict} — {verdicts[r.verdict]}")
+
+
 @cli.command("second-day")
 @click.option("--min-change", type=float, default=5.0, help="Minimum yesterday move %.")
 @click.option("--min-vol-ratio", type=float, default=1.5, help="Minimum volume ratio vs avg.")

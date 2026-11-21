@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`tradekit overnight TICKER`: overnight-risk check before carrying a position.** A stop
+  bounds an intraday loss, but the next open can land past it. The audit for Mar 9 to May 29,
+  2026 put 42% of that period's loss in overnight and weekend holds.
+  - 1σ = price × IV × √(sessions ÷ 252).
+  - A carry is sized so that a `--gap-sigmas` (default 2) open against the position stays
+    inside `--risk`: shares = risk ÷ max(stop distance, k × 1σ).
+  - Verdict `CARRY` / `REDUCE` / `NO CARRY` / `SIZE`.
+  - Warns when the stop sits inside a 1σ move, and when IV ÷ HV ≥ 1.25 (an event is priced).
+  - Price, IV and HV come from IB Gateway with their freshness stated (live or frozen, never
+    delayed), or from `--price` / `--iv` / `--hv`. `--json` for machine use.
+  - Core in `tradekit.analysis.overnight` (pure); snapshot in `tradekit.data.ibkr`.
+
 - **`tradekit depth record`: order-book depth recorder** (#9). Depth can't be backfilled,
   so it records as it happens, to Hive-partitioned Parquet (`book` / `trades` / `markers`,
   by date, source and symbol) under `$TRADEKIT_DEPTH_DIR`.

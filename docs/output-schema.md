@@ -275,3 +275,43 @@ Money fields are in the caller's currency units; tradekit never converts them. R
 - `checks.stop_outside_noise` is present only when `--atr` was given.
 - `valid` is the AND of `checks`. `warnings` never affect `valid`.
 - Consumers gate on `clearance.status == "READY"`, not on `valid` alone, because the checklist is part of clearance.
+
+## Overnight-risk check
+
+One position's carry check: the options-implied move over the hold, the gap-adjusted loss per
+share, the largest carry that fits the risk, and a verdict. The rules are in the
+`tradekit.analysis.overnight` module docstring.
+
+**Written by:** `tradekit overnight TICKER --json` (stdout only; never stored)
+
+Money fields are in the caller's currency units. Volatilities are annualized decimals.
+
+```json
+{
+  "symbol": "AAPL",
+  "direction": "long | short",
+  "price": 344.87,
+  "stop": 335.0,
+  "risk": 100.0,
+  "iv": 0.3012,
+  "hv": 0.2905,
+  "sessions": 1.0,
+  "gap_sigmas": 2.0,
+  "stop_distance": 9.87,
+  "one_sigma": 6.5434,
+  "gap_move": 13.0868,
+  "loss_per_share": 13.0868,
+  "carry_shares": 7,
+  "shares": 20,
+  "gap_loss": 261.74,
+  "iv_hv_ratio": 1.0368,
+  "verdict": "CARRY | REDUCE | NO CARRY | SIZE",
+  "warnings": [],
+  "source": "given | IB Gateway (live) | IB Gateway (frozen)"
+}
+```
+
+- `loss_per_share` = max(`stop_distance`, `gap_move`), and `gap_move` = `gap_sigmas` × `one_sigma`.
+- `shares` and `gap_loss` are null when no `--shares` was given; `verdict` is then `SIZE`.
+- `hv` and `iv_hv_ratio` are null when no HV was available.
+- `warnings` never change `verdict`. Consumers gate on `verdict`, not on `warnings`.
