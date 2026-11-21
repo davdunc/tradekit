@@ -74,7 +74,13 @@ class ParquetSink:
         name = f"part-{time.time_ns()}"
         tmp = part_dir / f".{name}.parquet.tmp"
         final = part_dir / f"{name}.parquet"
-        pq.write_table(pa.Table.from_pylist(rows), tmp)
-        os.replace(tmp, final)
+        try:
+            pq.write_table(pa.Table.from_pylist(rows), tmp)
+            os.replace(tmp, final)
+        except BaseException:
+            # Readers only see *.parquet, so a leftover temp file isn't data, but it is clutter
+            # that grows with every failed write. Remove it, then let the failure surface.
+            tmp.unlink(missing_ok=True)
+            raise
         self.rows_written += len(rows)
         logger.debug("wrote %d %s rows to %s", len(rows), kind, final)

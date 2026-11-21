@@ -224,3 +224,19 @@ def test_explicit_source_is_retried_never_substituted():
     run(rec, script)
     assert {e.source for e in sink.events if isinstance(e, BookUpdate)} == set()
     assert sink.markers("gap_start")
+
+
+def test_fallback_ending_a_gap_marks_the_switch_before_gap_end():
+    """Cause, then effect: why the fallback is running, then that the gap is over (#44 review)."""
+    sink, das, ibkr = ListSink(), Scripted("das", up=False), Scripted("ibkr", up=False)
+    rec = Recorder([das, ibkr], ["AAPL"], sink, retry_seconds=0.01)
+
+    async def script(stop):
+        await until(lambda: sink.markers("gap_start"))
+        ibkr.up = True
+        await until(lambda: sink.markers("gap_end"))
+
+    run(rec, script)
+    kinds = [m.marker for m in sink.markers() if m.marker in ("start", "switch", "gap_end")]
+    assert kinds[:3] == ["start", "switch", "gap_end"], kinds
+    assert "fallback: das unavailable" in sink.markers("switch", "ibkr")[0].detail

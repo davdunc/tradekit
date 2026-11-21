@@ -333,3 +333,67 @@ def test_cli_alpaca_warns_it_is_not_depth(monkeypatch, tmp_path):
     assert result.exit_code == 0, result.output
     assert "not depth" in result.stdout
     assert "from alpaca into" in result.stdout
+
+
+# ----- #44 review: thread and reconnect safety -----
+
+
+def test_alpaca_put_without_a_loop_drops_instead_of_raising():
+    src = AlpacaSource("k", "s")
+    src._put(None)  # no loop yet: must not raise (an assert used to be here)
+
+
+def test_alpaca_put_on_a_closed_loop_drops_instead_of_raising():
+    src = AlpacaSource("k", "s")
+    loop = asyncio.new_event_loop()
+    loop.close()
+    src._loop = loop
+    src._put(None)
+
+
+def test_alpaca_stream_failure_without_a_loop_still_ends_the_thread():
+    """_run_stream's error handler and finally both call _put; neither may raise out of it."""
+
+    class Boom:
+        def run(self):
+            raise ConnectionError("socket closed")
+
+    src = AlpacaSource("k", "s")
+    src._stream = Boom()
+    src._run_stream()  # returns normally
+
+
+def test_ibkr_late_disconnect_from_an_old_connection_does_not_end_the_new_stream(monkeypatch):
+    class Event(list):
+        def __iadd__(self, handler):
+            self.append(handler)
+            return self
+
+        def emit(self):
+            for handler in self:
+                handler()
+
+    class FakeIB:
+        instances = []
+
+        def __init__(self):
+            self.pendingTickersEvent, self.errorEvent, self.disconnectedEvent = Event(), Event(), Event()
+            FakeIB.instances.append(self)
+
+        async def connectAsync(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setitem(sys.modules, "ib_async", SimpleNamespace(IB=FakeIB))
+    src = IBKRSource("127.0.0.1", 4002)
+
+    async def scenario():
+        await src.connect()
+        first_queue = src._queue
+        await src.connect()  # reconnect: a fresh IB and a fresh queue
+        FakeIB.instances[0].disconnectedEvent.emit()  # the old connection's disconnect arrives late
+        assert src._queue.empty(), "a stale disconnect ended the new stream"
+        assert first_queue.get_nowait() is None  # it went to its own connection's queue
+        FakeIB.instances[1].disconnectedEvent.emit()
+        assert src._queue.get_nowait() is None  # the current connection's disconnect still ends it
+
+    asyncio.run(scenario())

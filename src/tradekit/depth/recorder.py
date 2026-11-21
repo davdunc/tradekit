@@ -178,6 +178,10 @@ class Recorder:
                 continue
             if await self._start(source) is None:
                 continue
+            if best is None and i > 0:
+                # Say why a fallback is running before saying the gap is over (cause, then effect).
+                unavailable = ", ".join(s.name for s in self.sources[:i])
+                self._mark("switch", source.name, f"fallback: {unavailable} unavailable")
             if self._in_gap:
                 self._in_gap = False
                 self._mark("gap_end", source.name)
@@ -189,9 +193,6 @@ class Recorder:
                 if source.name in self._active and not self._stop_event.is_set():
                     for other in self.sources[i + 1 :]:
                         await self._stop(other.name)
-            elif i > 0:
-                unavailable = ", ".join(s.name for s in self.sources[:i])
-                self._mark("switch", source.name, f"fallback: {unavailable} unavailable")
             break
         if not self._active and not self._in_gap:
             self._in_gap = True

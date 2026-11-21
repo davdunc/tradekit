@@ -124,7 +124,10 @@ class IBKRSource:
         await self._ib.connectAsync(self.host, self.port, clientId=self.client_id, readonly=True, timeout=10)
         self._ib.pendingTickersEvent += self._on_tickers
         self._ib.errorEvent += self._on_error
-        self._ib.disconnectedEvent += lambda: self._queue.put_nowait(None)
+        # Bind this connection's queue now. Looking up ``self._queue`` when the event fires would
+        # let a late disconnect from a previous connection end this one's stream.
+        queue = self._queue
+        self._ib.disconnectedEvent += lambda: queue.put_nowait(None)
 
     async def subscribe(self, symbols: Sequence[str]) -> None:
         from ib_async import Stock

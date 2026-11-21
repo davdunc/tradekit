@@ -3,6 +3,7 @@
 import datetime as dt
 
 import pyarrow.dataset as ds
+import pytest
 
 from tradekit.depth.events import BookUpdate, Marker, Trade
 from tradekit.depth.sink import ParquetSink
@@ -59,3 +60,33 @@ def test_flushes_on_time(tmp_path):
     now[0] = 6.0
     sink.add(_book(position=1))
     assert sink.rows_written == 2
+
+
+def _fail_after_partial_write(monkeypatch, where):
+    """Make the write (or the rename) fail after a partial temp file exists."""
+    from tradekit.depth import sink as sink_mod
+
+    def partial_write(table, path):
+        path.write_bytes(b"PAR1 partial")
+        if where == "write":
+            raise OSError("disk full")
+
+    def failing_replace(src, dst):
+        raise OSError("rename refused")
+
+    monkeypatch.setattr(sink_mod.pq, "write_table", partial_write)
+    if where == "replace":
+        monkeypatch.setattr(sink_mod.os, "replace", failing_replace)
+
+
+@pytest.mark.parametrize("where", ["write", "replace"])
+def test_failed_write_leaves_no_temp_file_and_raises(tmp_path, monkeypatch, where):
+    """A failed write must not leave a stray .tmp file behind (#44 review)."""
+    _fail_after_partial_write(monkeypatch, where)
+    sink = ParquetSink(tmp_path, flush_rows=1000)
+    sink.add(_book())
+    with pytest.raises(OSError):
+        sink.flush()
+    assert not list(tmp_path.rglob("*.tmp"))
+    assert not list(tmp_path.rglob("*.parquet"))
+    assert sink.rows_written == 0

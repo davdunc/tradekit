@@ -87,9 +87,21 @@ class AlpacaSource:
         self._stream = StockDataStream(self.key_id, self.secret_key, feed=feed)
 
     def _put(self, event: Event | None) -> None:
-        """Hand an event to the recorder's loop from the stream's thread."""
-        assert self._loop is not None
-        self._loop.call_soon_threadsafe(self._queue.put_nowait, event)
+        """Hand an event to the recorder's loop from the stream's thread. Never raises.
+
+        It runs in the stream thread, including from ``_run_stream``'s error handler and its
+        ``finally``. If it raised there, the end-of-stream sentinel would never arrive and
+        ``events()`` would wait forever instead of failing over. So a missing or closed loop
+        is logged and the event dropped. (An ``assert`` was here; ``python -O`` strips it.)
+        """
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            logger.warning("alpaca: no running recorder loop; dropped %s", type(event).__name__)
+            return
+        try:
+            loop.call_soon_threadsafe(self._queue.put_nowait, event)
+        except RuntimeError:  # the loop closed between the check and the call
+            logger.warning("alpaca: recorder loop closed; dropped %s", type(event).__name__)
 
     async def subscribe(self, symbols: Sequence[str]) -> None:
         async def on_quote(quote) -> None:
