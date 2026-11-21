@@ -328,3 +328,104 @@ def test_cli_manual_short_says_dividend_and_borrow_were_not_checked():
     result = run(["XYZ", "--stop", "103", "--risk", "100", "--price", "100", "--iv", "0.3"])
     assert result.exit_code == 0, result.output
     assert "ex-dividend not checked; borrow not checked" in result.output
+
+
+# ----- IB Gateway snapshot: don't wait out the deadline for optional ticks (#45 review) -----
+
+
+@pytest.mark.parametrize(
+    ("required", "everything", "elapsed", "done"),
+    [
+        (True, True, 0.1, True),  # every field in: stop at once
+        (True, False, 0.5, False),  # price and IV in, optional ticks get their grace period
+        (True, False, 2.0, True),  # ...and no longer
+        (False, False, 7.9, False),  # never stop without price and IV; the deadline handles that
+    ],
+)
+def test_snapshot_wait_rule(required, everything, elapsed, done):
+    from tradekit.data.ibkr import _done
+
+    assert _done(required, everything, elapsed, grace=2.0) is done
+
+
+def _fake_gateway(monkeypatch, **ticks):
+    """A fake ib_async whose ticker carries only ``ticks``; everything else never arrives."""
+    import asyncio
+    import sys
+
+    nan = float("nan")
+
+    class Ticker:
+        marketDataType = 1
+        close = last = impliedVolatility = histVolatility = shortable = shortableShares = nan
+        dividends = None
+
+        def __init__(self):
+            for k, v in ticks.items():
+                setattr(self, k, v)
+
+        def marketPrice(self):
+            return self.last
+
+    class Event(list):
+        def __iadd__(self, handler):
+            self.append(handler)
+            return self
+
+    class IB:
+        def __init__(self):
+            self.errorEvent = Event()
+
+        async def connectAsync(self, *a, **k):
+            return None
+
+        async def qualifyContractsAsync(self, contract):
+            contract.conId = 1
+            return [contract]
+
+        def reqMarketDataType(self, t):
+            pass
+
+        def reqMktData(self, *a):
+            return Ticker()
+
+        def cancelMktData(self, c):
+            pass
+
+        def disconnect(self):
+            pass
+
+    class Stock:
+        def __init__(self, symbol, *a):
+            self.symbol, self.conId = symbol, 0
+
+    monkeypatch.setitem(sys.modules, "ib_async", SimpleNamespace(IB=IB, Stock=Stock))
+    return asyncio
+
+
+def test_snapshot_returns_after_the_grace_period_when_optional_ticks_never_arrive(monkeypatch):
+    import time
+
+    asyncio = _fake_gateway(monkeypatch, last=697.49, impliedVolatility=0.3088)
+    from tradekit.data.ibkr import _snapshot
+
+    started = time.monotonic()
+    snap = asyncio.run(_snapshot("SPY", "127.0.0.1", 4002, 18, wait=8.0, grace=0.3))
+    took = time.monotonic() - started
+    assert took < 2.0, f"waited {took:.1f}s for ticks that never come"
+    assert (snap.price, snap.iv, snap.hv, snap.shortable, snap.dividends_known) == (697.49, 0.3088, None, None, False)
+
+
+def test_snapshot_returns_at_once_when_every_field_arrives(monkeypatch):
+    import time
+
+    divs = SimpleNamespace(nextDate=None, nextAmount=None)
+    asyncio = _fake_gateway(
+        monkeypatch, last=26.93, impliedVolatility=0.64, histVolatility=0.43, shortable=3.0, dividends=divs
+    )
+    from tradekit.data.ibkr import _snapshot
+
+    started = time.monotonic()
+    snap = asyncio.run(_snapshot("GME", "127.0.0.1", 4002, 18, wait=8.0, grace=5.0))
+    assert time.monotonic() - started < 1.0  # well under the 5 s grace: nothing was missing
+    assert snap.dividends_known and snap.ex_dividend_date is None and snap.shortable == 3.0

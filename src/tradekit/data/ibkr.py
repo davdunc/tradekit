@@ -60,7 +60,17 @@ def _finite(value: Any) -> float | None:
     return float(value) if isinstance(value, int | float) and math.isfinite(value) else None
 
 
-async def _snapshot(symbol: str, host: str, port: int, client_id: int, wait: float) -> VolSnapshot:
+def _done(has_required: bool, has_all: bool, elapsed: float, grace: float) -> bool:
+    """Stop waiting once every field is in, or once price and IV are in and ``grace`` has passed.
+
+    HV, borrow and dividends are optional: some never arrive (HV for an ETF in frozen weekend
+    data, for one). Waiting for them until the deadline made every such call take the full
+    ``wait`` although price and IV arrived at once (#45 review).
+    """
+    return has_all or (has_required and elapsed >= grace)
+
+
+async def _snapshot(symbol: str, host: str, port: int, client_id: int, wait: float, grace: float = 2.0) -> VolSnapshot:
     from ib_async import IB, Stock
 
     ib = IB()
@@ -79,13 +89,19 @@ async def _snapshot(symbol: str, host: str, port: int, client_id: int, wait: flo
         ib.reqMarketDataType(1)
         ticker = ib.reqMktData(contract, "104,106,236,456", False, False)
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + wait
-        while loop.time() < deadline:  # stop early once every field has arrived
-            has_price = _number(ticker.marketPrice()) or _number(ticker.close)
-            vols = _number(ticker.impliedVolatility) and _number(ticker.histVolatility)
-            if has_price and vols and _finite(ticker.shortable) is not None and ticker.dividends is not None:
+        start = loop.time()
+        while loop.time() - start < wait:
+            required = bool(
+                (_number(ticker.marketPrice()) or _number(ticker.close)) and _number(ticker.impliedVolatility)
+            )
+            optional = (
+                _number(ticker.histVolatility) is not None
+                and _finite(ticker.shortable) is not None
+                and ticker.dividends is not None
+            )
+            if _done(required, required and optional, loop.time() - start, grace):
                 break
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(0.1)
         ib.cancelMktData(contract)
 
         md_type = ticker.marketDataType
@@ -120,7 +136,7 @@ async def _snapshot(symbol: str, host: str, port: int, client_id: int, wait: flo
         ib.disconnect()
 
 
-def fetch_vol_snapshot(symbol: str, *, wait: float = 8.0) -> VolSnapshot:
+def fetch_vol_snapshot(symbol: str, *, wait: float = 8.0, grace: float = 2.0) -> VolSnapshot:
     """Price, IV and HV for ``symbol`` from IB Gateway. Raises ``IBKRSnapshotError`` with the reason."""
     from tradekit.config import get_settings
 
@@ -138,4 +154,4 @@ def fetch_vol_snapshot(symbol: str, *, wait: float = 8.0) -> VolSnapshot:
             "or pass --price and --iv"
         ) from e
     client_id = data.ibkr_client_id + 1
-    return asyncio.run(_snapshot(symbol.upper(), data.ibkr_host, int(data.ibkr_port), client_id, wait))
+    return asyncio.run(_snapshot(symbol.upper(), data.ibkr_host, int(data.ibkr_port), client_id, wait, grace))
