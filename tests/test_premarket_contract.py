@@ -173,3 +173,53 @@ def test_price_filter_without_pre_price_uses_price():
 
     df = pd.DataFrame({"ticker": ["A", "B"], "price": [4.0, 10.0]})
     assert price_filter(5)(df)["ticker"].tolist() == ["B"]
+
+
+def test_second_day_rows_survive_a_session_with_no_premarket_at_all():
+    """All gaps None (weekend, before 04:00 ET): the column holds None, not NaN, and `None > 0`
+    used to raise TypeError in the bias line. Found in the #53 review."""
+    from tradekit import cli as cli_mod
+
+    class NoHistory:
+        def get_history(self, *a, **k):
+            raise RuntimeError("offline")
+
+    df = pd.DataFrame(
+        [
+            {"ticker": "UP", "price": 10.0, "prev_change_pct": 12.0, "volume_ratio": 3.0, "pre_gap_pct": None},
+            {"ticker": "DN", "price": 10.0, "prev_change_pct": -12.0, "volume_ratio": 3.0, "pre_gap_pct": None},
+        ]
+    )
+    assert df["pre_gap_pct"].dtype == object  # the case that crashed
+    rows = cli_mod._build_second_day_rows(df, NoHistory())
+    assert [(r["ticker"], r["bias"]) for r in rows] == [("UP", "NEUT"), ("DN", "NEUT")]
+    assert all("pre-mkt n/a" in r["notes"] for r in rows)
+
+
+def test_second_day_bias_still_needs_the_premarket_to_confirm():
+    from tradekit import cli as cli_mod
+
+    class NoHistory:
+        def get_history(self, *a, **k):
+            raise RuntimeError("offline")
+
+    df = pd.DataFrame(
+        [
+            {"ticker": "UP", "price": 10.0, "prev_change_pct": 12.0, "volume_ratio": 3.0, "pre_gap_pct": 2.0},
+            {"ticker": "DN", "price": 10.0, "prev_change_pct": -12.0, "volume_ratio": 3.0, "pre_gap_pct": -2.0},
+            {"ticker": "NA", "price": 10.0, "prev_change_pct": 12.0, "volume_ratio": 3.0, "pre_gap_pct": None},
+        ]
+    )
+    bias = {r["ticker"]: r["bias"] for r in cli_mod._build_second_day_rows(df, NoHistory())}
+    assert bias == {"UP": "BULL", "DN": "BEAR", "NA": "NEUT"}
+
+
+@pytest.mark.parametrize("gaps", [[None, None], [3.0, None, -5.0]])
+def test_scanner_sort_puts_missing_gaps_last_without_crashing(gaps):
+    from tradekit.screener.premarket import _abs_gap
+
+    df = pd.DataFrame({"gap_pct": gaps})
+    order = df.sort_values("gap_pct", key=_abs_gap, ascending=False)["gap_pct"].tolist()
+    present = [g for g in order if g is not None and not pd.isna(g)]
+    assert present == sorted(present, key=abs, reverse=True)
+    assert all(g is None or pd.isna(g) for g in order[len(present) :])

@@ -1533,7 +1533,11 @@ def _build_second_day_rows(
         if yt_note:
             notes_parts.append(f"StockedUp: {yt_note}")
 
-        bias = "BULL" if chg > 0 and pre_gap > 0 else "BEAR" if chg < 0 and pre_gap < 0 else "NEUT"
+        # No premarket (None, or NaN in a numeric column) means no confirmation: NEUT, as a 0 gap was (#51).
+        has_gap = not pd.isna(pre_gap)
+        bias = (
+            "BULL" if has_gap and chg > 0 and pre_gap > 0 else "BEAR" if has_gap and chg < 0 and pre_gap < 0 else "NEUT"
+        )
 
         rows.append(
             {
