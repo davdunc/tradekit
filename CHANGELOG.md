@@ -123,8 +123,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     is shown as `stale` and not counted. Quotes now carry Yahoo's `market_time`; a quote
     without one is counted and labelled "session time unknown".
   - **Verdict:** it now states how many signals were unavailable or stale, and says when
-    they are enough to hide a COUNTER-TREND call. With no live signal it is `NO READ`, not
-    `ALIGNED`.
+    they are enough to hide a COUNTER-TREND call. With no live signal it is `NO READ` (and says
+    COUNTER-TREND can't be ruled out), not `ALIGNED`.
 - **Fake test 403s were filed as real Finviz throttling** (#24, #35). Tests fed fake
   403 responses through `FinvizSession` without redirecting `API_ERROR_LOG`, so every
   suite run appended five events to `~/.local/state/api-errors/events.jsonl`, and the

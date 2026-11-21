@@ -97,7 +97,9 @@ def test_missing_data_is_no_read_not_aligned():
     assert report.bearish_count == 0
     assert report.bullish_count == 0
     assert report.missing == len(report.signals) == 5
-    assert report.verdict("long").startswith("NO READ: none of the 5 signals is live")
+    assert report.verdict("long") == (
+        "NO READ: none of the 5 signals is live, so COUNTER-TREND can't be ruled out — rerun once premarket is trading"
+    )
 
 
 # ----- #46 review: invalid direction and sector are errors, not wrong answers -----
@@ -249,6 +251,8 @@ def test_aligned_verdict_also_flags_hidden_counter_trend():
         PREMARKET = {"SOXX": {"gap_pct": 0.1}}
 
     report = build_comps_report(Quiet(), "MU", now=MON_0330)
+    # 5 signals: Samsung and SOXX are live (both flat). Missing: SK Hynix (no quote), the SOXS
+    # tell (no premarket), and the index skew, one signal built from QQQ *and* SPY. So 3.
     assert report.missing == 3
     assert report.verdict("long").endswith("— too few live signals to rule out COUNTER-TREND")
 

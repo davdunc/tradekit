@@ -162,7 +162,11 @@ class CompsReport:
                 f"no breakout-bias entries{gap}"
             )
         if missing == total:
-            return f"NO READ: none of the {total} signals is live — rerun once premarket is trading"
+            # Nothing is live, so nothing is ruled out either, COUNTER-TREND included: say so.
+            return (
+                f"NO READ: none of the {total} signals is live, so COUNTER-TREND can't be ruled out"
+                " — rerun once premarket is trading"
+            )
         hidden = ""
         if n + missing >= COUNTER_TREND_COUNT:
             hidden = " — too few live signals to rule out COUNTER-TREND"
