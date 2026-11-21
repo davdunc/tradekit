@@ -1,13 +1,19 @@
-"""Price and volatility snapshot from IB Gateway, for the overnight-risk check.
+"""Price, volatility, dividend and borrow snapshot from IB Gateway, for the overnight-risk check.
 
-One read-only connection: price, 30-day implied volatility (generic tick 106) and 30-day
-historical volatility (tick 104) for a stock or ETF. Needs ``tradekit-cli[ibkr]`` and live US
-equity and options data on the IBKR username (e.g. the US Securities Snapshot and Futures Value
-Bundle plus the Equity and Options Add-On).
+One read-only connection, one ``reqMktData`` with generic ticks 104 (30-day historical
+volatility), 106 (30-day implied volatility), 236 (shortable level and shares) and 456 (IB
+dividends: next ex-date and amount). Needs ``tradekit-cli[ibkr]`` and live US equity and options
+data on the IBKR username (e.g. the US Securities Snapshot and Futures Value Bundle plus the
+Equity and Options Add-On).
 
 Freshness is stated, never assumed (SPEC, the data provider contract). The request asks for
-market data type 2: live during the session, otherwise TWS's frozen last values. The type that
-actually arrived is returned, and delayed data (3/4) is refused rather than passed off as live.
+market data type 1. Type 2 (frozen) was tried first and dropped: measured 2026-11-21, it
+returned no shortable or dividend ticks for SPY and GME, where type 1 returned all of them.
+Outside the session type 1 still answers, with the last values, so ``live`` means a live
+subscription feed, not an open market. Delayed data (3/4) is refused rather than passed off.
+
+Missing is kept distinct from none: ``dividends_known`` is False when tick 456 never arrived,
+and True with ``ex_dividend_date`` None when the broker reports no scheduled dividend.
 
 Connection settings follow the no-fallback rule: ``IBKR_HOST`` and ``IBKR_PORT`` must be set.
 The client id is ``IBKR_CLIENT_ID + 1``, so a snapshot never collides with a running
@@ -17,6 +23,7 @@ The client id is ``IBKR_CLIENT_ID + 1``, so a snapshot never collides with a run
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import math
 from dataclasses import dataclass
 from typing import Any
@@ -38,13 +45,19 @@ class VolSnapshot:
     iv: float
     hv: float | None
     freshness: str  # live | frozen
-
-    def to_dict(self) -> dict:
-        return {"symbol": self.symbol, "price": self.price, "iv": self.iv, "hv": self.hv, "freshness": self.freshness}
+    dividends_known: bool = False  # tick 456 arrived
+    ex_dividend_date: dt.date | None = None
+    dividend_amount: float | None = None
+    shortable: float | None = None  # tick 236 level; None when it never arrived
+    shortable_shares: int | None = None
 
 
 def _number(value: Any) -> float | None:
     return float(value) if isinstance(value, int | float) and math.isfinite(value) and value > 0 else None
+
+
+def _finite(value: Any) -> float | None:
+    return float(value) if isinstance(value, int | float) and math.isfinite(value) else None
 
 
 async def _snapshot(symbol: str, host: str, port: int, client_id: int, wait: float) -> VolSnapshot:
@@ -63,13 +76,14 @@ async def _snapshot(symbol: str, host: str, port: int, client_id: int, wait: flo
         contract = Stock(symbol, "SMART", "USD")
         if not await ib.qualifyContractsAsync(contract) or not contract.conId:
             raise IBKRSnapshotError(f"{symbol}: no such US stock or ETF at IBKR")
-        ib.reqMarketDataType(2)
-        ticker = ib.reqMktData(contract, "104,106", False, False)
+        ib.reqMarketDataType(1)
+        ticker = ib.reqMktData(contract, "104,106,236,456", False, False)
         loop = asyncio.get_running_loop()
         deadline = loop.time() + wait
-        while loop.time() < deadline:  # stop early once price, IV and HV have all arrived
+        while loop.time() < deadline:  # stop early once every field has arrived
             has_price = _number(ticker.marketPrice()) or _number(ticker.close)
-            if has_price and _number(ticker.impliedVolatility) and _number(ticker.histVolatility):
+            vols = _number(ticker.impliedVolatility) and _number(ticker.histVolatility)
+            if has_price and vols and _finite(ticker.shortable) is not None and ticker.dividends is not None:
                 break
             await asyncio.sleep(0.25)
         ib.cancelMktData(contract)
@@ -87,7 +101,21 @@ async def _snapshot(symbol: str, host: str, port: int, client_id: int, wait: flo
             missing = " and ".join(n for n, v in (("price", price), ("implied volatility", iv)) if v is None)
             detail = f" ({'; '.join(refusals)})" if refusals else ""
             raise IBKRSnapshotError(f"{symbol}: IBKR returned no {missing} within {wait:g}s{detail}")
-        return VolSnapshot(symbol, round(price, 4), round(iv, 6), _number(ticker.histVolatility), freshness)
+        divs = ticker.dividends
+        shortable = _finite(ticker.shortable)
+        shares = _finite(ticker.shortableShares)
+        return VolSnapshot(
+            symbol,
+            round(price, 4),
+            round(iv, 6),
+            _number(ticker.histVolatility),
+            freshness,
+            dividends_known=divs is not None,
+            ex_dividend_date=getattr(divs, "nextDate", None),
+            dividend_amount=_number(getattr(divs, "nextAmount", None)),
+            shortable=shortable,
+            shortable_shares=None if shares is None else int(shares),
+        )
     finally:
         ib.disconnect()
 

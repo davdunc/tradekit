@@ -229,8 +229,15 @@ tradekit overnight XYZ --stop 9.40 --risk 50 --price 10 --iv 0.65      # no brok
   `--shares` is given.
 - **Warnings:** the stop sits inside a 1σ move, or IV ÷ HV ≥ 1.25, meaning the options are
   pricing an event, so check for earnings or news. Warnings never change the verdict.
+- **Shorts only:**
+  - **Ex-dividend:** flags an ex-dividend date inside the hold, with what the position would
+    pay. A short held at the close before the ex-date pays it.
+  - **Borrow:** flags hard-to-borrow, no shares to borrow, or a position larger than the
+    shares IBKR shows available. A carried short can be recalled and bought in at the open.
+  - **Missing data:** without that data (for example with `--price`/`--iv`), each check is
+    reported as *not checked*. It doesn't pass silently.
 
-Price, 30-day IV and HV come from IB Gateway (`tradekit-cli[ibkr]`, `IBKR_HOST`,
+Price, 30-day IV and HV, the next dividend and the borrow level come from IB Gateway (`tradekit-cli[ibkr]`, `IBKR_HOST`,
 `IBKR_PORT`; client id `IBKR_CLIENT_ID + 1`, so it can run next to `depth record`). The output
 says whether the data was live or frozen after the close, and delayed data is refused.
 

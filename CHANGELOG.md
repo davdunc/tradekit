@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     inside `--risk`: shares = risk ÷ max(stop distance, k × 1σ).
   - Verdict `CARRY` / `REDUCE` / `NO CARRY` / `SIZE`.
   - Warns when the stop sits inside a 1σ move, and when IV ÷ HV ≥ 1.25 (an event is priced).
+  - Shorts: warns when an ex-dividend date falls inside the hold (with what the short pays),
+    and when the borrow is hard to borrow, unavailable, or smaller than the position (IBKR
+    ticks 456 and 236). Missing data is reported as *not checked*. These are warnings: the
+    open drops by about the dividend, and borrow is a recall risk, not a gap size.
   - Price, IV and HV come from IB Gateway with their freshness stated (live or frozen, never
     delayed), or from `--price` / `--iv` / `--hv`. `--json` for machine use.
   - Core in `tradekit.analysis.overnight` (pure); snapshot in `tradekit.data.ibkr`.

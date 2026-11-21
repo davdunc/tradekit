@@ -306,6 +306,15 @@ Money fields are in the caller's currency units. Volatilities are annualized dec
   "gap_loss": 261.74,
   "iv_hv_ratio": 1.0368,
   "verdict": "CARRY | REDUCE | NO CARRY | SIZE",
+  "as_of": "2026-11-20",
+  "hold_end": "2026-11-23",
+  "dividend_checked": true,
+  "ex_dividend_date": "2026-12-18",
+  "dividend_per_share": 1.8311,
+  "dividend_in_hold": false,
+  "dividend_owed": null,
+  "borrow_status": "available | hard to borrow | not available",
+  "shares_available": 6093985,
   "warnings": [],
   "source": "given | IB Gateway (live) | IB Gateway (frozen)"
 }
@@ -315,3 +324,10 @@ Money fields are in the caller's currency units. Volatilities are annualized dec
 - `shares` and `gap_loss` are null when no `--shares` was given; `verdict` is then `SIZE`.
 - `hv` and `iv_hv_ratio` are null when no HV was available.
 - `warnings` never change `verdict`. Consumers gate on `verdict`, not on `warnings`.
+- `hold_end` is `as_of` plus `ceil(sessions)` weekdays. Exchange holidays aren't skipped.
+- The short-side fields (`dividend_checked` through `shares_available`) are null for a long.
+- For a short, `dividend_checked` false or `borrow_status` null means that check had no data.
+  A warning says so.
+- `ex_dividend_date` null with `dividend_checked` true means the broker reports no scheduled
+  dividend. `dividend_in_hold` is true when `as_of < ex_dividend_date <= hold_end`.
+- `dividend_owed` is set only when the ex-date is inside the hold and `shares` was given.

@@ -1,5 +1,6 @@
 """Overnight-risk check: the carry math, verdicts, warnings, and the CLI without a broker."""
 
+import datetime as dt
 import json
 import math
 from types import SimpleNamespace
@@ -8,7 +9,15 @@ import pytest
 from click.testing import CliRunner
 
 from tradekit import cli as cli_mod
-from tradekit.analysis.overnight import OvernightError, check_carry, expected_move
+from tradekit.analysis.overnight import (
+    BorrowInfo,
+    DividendInfo,
+    OvernightError,
+    borrow_status,
+    check_carry,
+    expected_move,
+    hold_end,
+)
 
 # ----- expected move -----
 
@@ -191,3 +200,131 @@ def test_cli_given_price_overrides_the_snapshot(monkeypatch):
     monkeypatch.setattr(ibkr, "fetch_vol_snapshot", lambda symbol: ibkr.VolSnapshot("XYZ", 50.0, IV_2, None, "live"))
     result = run(["XYZ", "--stop", "99", "--risk", "100", "--price", "100", "--json"])
     assert json.loads(result.stdout)["price"] == 100.0
+
+
+# ----- short side: hold window, ex-dividend, borrow -----
+
+FRI, SAT, MON, TUE, THU = (dt.date(2026, 11, d) for d in (20, 21, 23, 24, 26))
+
+
+@pytest.mark.parametrize(
+    ("as_of", "sessions", "end"),
+    [(FRI, 1, MON), (SAT, 1, MON), (MON, 1, TUE), (THU, 3, dt.date(2026, 12, 1)), (MON, 1.5, dt.date(2026, 11, 25))],
+)
+def test_hold_end_skips_weekends(as_of, sessions, end):
+    assert hold_end(as_of, sessions) == end
+
+
+@pytest.mark.parametrize(
+    ("level", "status"),
+    [
+        (3.0, "available"),
+        (2.6, "available"),
+        (2.5, "hard to borrow"),
+        (2.0, "hard to borrow"),
+        (1.5, "not available"),
+        (0.0, "not available"),
+    ],
+)
+def test_borrow_status_follows_ibkrs_shortable_levels(level, status):
+    assert borrow_status(level) == status
+
+
+def short(**kw):
+    """A short of 10 at 100 with a 103 stop, carried from Friday 11-20 over the weekend."""
+    args = {"shares": 10, "as_of": FRI, "dividend": DividendInfo(None, None), "borrow": BorrowInfo(3.0, 1_000_000)}
+    return check_carry("XYZ", 100, 103, 100, IV_2, **{**args, **kw})
+
+
+def test_short_with_clean_borrow_and_no_dividend_has_no_short_warnings():
+    r = short()
+    assert (r.hold_end, r.dividend_checked, r.dividend_in_hold, r.borrow_status) == (MON, True, False, "available")
+    assert r.warnings == []
+
+
+def test_ex_dividend_inside_the_hold_warns_and_totals_what_the_short_pays():
+    r = short(dividend=DividendInfo(MON, 1.8311))  # SPY's real next dividend amount
+    assert r.dividend_in_hold is True
+    assert r.dividend_owed == pytest.approx(18.31)
+    assert any("ex-dividend 2026-11-23 is inside the hold" in w and "18.31 on 10 shares" in w for w in r.warnings)
+    assert r.verdict == "CARRY"  # a warning, not a size change
+
+
+def test_ex_dividend_today_is_not_in_the_carry():
+    """A short opened today wasn't held at the close before today's ex-date."""
+    r = short(dividend=DividendInfo(FRI, 1.0))
+    assert r.dividend_in_hold is False and r.dividend_owed is None
+
+
+def test_ex_dividend_after_the_hold_is_reported_but_not_warned():
+    r = short(dividend=DividendInfo(dt.date(2026, 12, 18), 1.8311))  # SPY 2026-12-18
+    assert (r.dividend_in_hold, r.ex_dividend_date) == (False, dt.date(2026, 12, 18))
+    assert not any("ex-dividend" in w for w in r.warnings)
+
+
+def test_longer_hold_catches_a_later_ex_date():
+    r = short(dividend=DividendInfo(TUE, 0.5), sessions=2)
+    assert r.dividend_in_hold is True
+
+
+def test_ex_dividend_without_an_amount_still_warns():
+    r = short(dividend=DividendInfo(MON, None))
+    assert r.dividend_owed is None
+    assert any("amount IBKR didn't report" in w for w in r.warnings)
+
+
+@pytest.mark.parametrize(
+    ("borrow", "text"),
+    [(BorrowInfo(2.0, None), "hard to borrow"), (BorrowInfo(1.0, 0), "no shares to borrow")],
+)
+def test_tight_borrow_warns_but_does_not_change_the_verdict(borrow, text):
+    r = short(borrow=borrow)
+    assert any(text in w for w in r.warnings)
+    assert r.verdict == "CARRY"
+
+
+def test_short_larger_than_the_shares_available_warns():
+    r = short(borrow=BorrowInfo(3.0, 5))
+    assert any("only 5 shares available to borrow, fewer than the 10 short" in w for w in r.warnings)
+
+
+def test_unchecked_dividend_and_borrow_are_said_not_passed():
+    r = short(dividend=None, borrow=None)
+    assert r.dividend_checked is False and r.borrow_status is None
+    assert any("ex-dividend not checked" in w for w in r.warnings)
+    assert any("borrow not checked" in w for w in r.warnings)
+
+
+def test_longs_get_no_short_side_fields_or_warnings():
+    r = check_carry("XYZ", 100, 94, 120, IV_2, as_of=FRI, dividend=DividendInfo(MON, 1.0), borrow=BorrowInfo(1.0))
+    assert (r.dividend_checked, r.dividend_in_hold, r.borrow_status) == (None, None, None)
+    assert r.hold_end == MON
+    assert r.warnings == []
+
+
+def test_cli_short_reads_dividend_and_borrow_from_the_snapshot(monkeypatch):
+    from tradekit.data import ibkr
+
+    snap = ibkr.VolSnapshot(
+        "SPY", 697.49, 0.3088, 0.1654, "live",
+        dividends_known=True, ex_dividend_date=dt.date(2026, 11, 23), dividend_amount=1.8311,
+        shortable=3.0, shortable_shares=6_093_985,
+    )  # fmt: skip
+    monkeypatch.setattr(ibkr, "fetch_vol_snapshot", lambda symbol: snap)
+    monkeypatch.setattr(cli_mod, "now_et", lambda: dt.datetime(2026, 11, 20, 15, 0))
+    result = run(["SPY", "--stop", "705", "--risk", "280", "--shares", "10"])
+    assert result.exit_code == 0, result.output
+    assert "Short side (hold through 2026-11-23)" in result.output
+    assert "next ex-dividend 2026-11-23 (1.831/share), INSIDE the hold" in result.output
+    assert "borrow available, 6,093,985 shares available" in result.output
+    assert "18.31 on 10 shares" in result.output
+
+    data = json.loads(run(["SPY", "--stop", "705", "--risk", "280", "--json"]).stdout)
+    assert (data["as_of"], data["hold_end"], data["ex_dividend_date"]) == ("2026-11-20", "2026-11-23", "2026-11-23")
+    assert (data["dividend_in_hold"], data["borrow_status"]) == (True, "available")
+
+
+def test_cli_manual_short_says_dividend_and_borrow_were_not_checked():
+    result = run(["XYZ", "--stop", "103", "--risk", "100", "--price", "100", "--iv", "0.3"])
+    assert result.exit_code == 0, result.output
+    assert "ex-dividend not checked; borrow not checked" in result.output

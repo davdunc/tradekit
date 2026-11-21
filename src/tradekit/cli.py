@@ -819,14 +819,16 @@ def overnight(ticker, stop_price, risk, shares, sessions, gap_sigmas, price, iv,
     shares = risk ÷ max(stop distance, GAP-SIGMAS × σ).
 
     Price, IV and HV come from IB Gateway (IBKR_HOST, IBKR_PORT; tradekit-cli[ibkr])
-    unless --price and --iv are both given.
+    unless --price and --iv are both given. For a short, the same snapshot supplies the
+    next ex-dividend date and the borrow status; without it they are reported as not checked.
     """
     import json
 
-    from tradekit.analysis.overnight import OvernightError, check_carry
+    from tradekit.analysis.overnight import BorrowInfo, DividendInfo, OvernightError, check_carry
 
     ticker = ticker.upper()
     source = "given"
+    dividend = borrow = None
     if price is None or iv is None:
         from tradekit.data.ibkr import IBKRSnapshotError, fetch_vol_snapshot
 
@@ -838,10 +840,25 @@ def overnight(ticker, stop_price, risk, shares, sessions, gap_sigmas, price, iv,
         iv = iv if iv is not None else snap.iv
         hv = hv if hv is not None else snap.hv
         source = f"IB Gateway ({snap.freshness})"
+        if snap.dividends_known:
+            dividend = DividendInfo(snap.ex_dividend_date, snap.dividend_amount)
+        if snap.shortable is not None:
+            borrow = BorrowInfo(snap.shortable, snap.shortable_shares)
 
     try:
         result = check_carry(
-            ticker, price, stop_price, risk, iv, hv=hv, shares=shares, sessions=sessions, gap_sigmas=gap_sigmas
+            ticker,
+            price,
+            stop_price,
+            risk,
+            iv,
+            hv=hv,
+            shares=shares,
+            sessions=sessions,
+            gap_sigmas=gap_sigmas,
+            as_of=now_et().date(),
+            dividend=dividend,
+            borrow=borrow,
         )
     except OvernightError as e:
         raise click.UsageError(str(e)) from e
@@ -865,6 +882,19 @@ def overnight(ticker, stop_price, risk, shares, sessions, gap_sigmas, price, iv,
     )
     if r.shares is not None:
         click.echo(f"  Position {r.shares:,} shares → a {r.gap_sigmas:g}σ gap costs {r.gap_loss:,.2f}")
+    if r.direction == "short":
+        hold = f"hold through {r.hold_end.isoformat()}" if r.hold_end else "hold window n/a"
+        if not r.dividend_checked:
+            div = "ex-dividend not checked"
+        elif r.ex_dividend_date is None:
+            div = "no dividend scheduled"
+        else:
+            where = "INSIDE the hold" if r.dividend_in_hold else "outside the hold"
+            amount = f"{r.dividend_per_share:.4g}/share" if r.dividend_per_share is not None else "amount n/a"
+            div = f"next ex-dividend {r.ex_dividend_date.isoformat()} ({amount}), {where}"
+        avail = f", {r.shares_available:,} shares available" if r.shares_available is not None else ""
+        borrow_text = f"borrow {r.borrow_status}{avail}" if r.borrow_status else "borrow not checked"
+        click.echo(f"  Short side ({hold}): {div}; {borrow_text}")
     for w in r.warnings:
         click.echo(f"  ! {w}")
     verdicts = {
