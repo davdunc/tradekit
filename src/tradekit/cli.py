@@ -960,8 +960,11 @@ def comps(tickers, direction: str, sector: str | None, source: str | None):
         table.add_column("Detail")
 
         for sig in report.signals:
+            detail = f"{sig.detail} · {sig.note}" if sig.note else sig.detail
             if sig.move_pct is None:
                 move, read = "-", "[dim]n/a[/dim]"
+            elif sig.stale:
+                move, read = f"[dim]{sig.move_pct:+.2f}%[/dim]", "[yellow]stale[/yellow]"
             else:
                 style = "red" if sig.bearish else "green" if sig.bearish is False else "white"
                 move = f"[{style}]{sig.move_pct:+.2f}%[/{style}]"
@@ -972,11 +975,17 @@ def comps(tickers, direction: str, sector: str | None, source: str | None):
                     if sig.bearish is False
                     else "neutral"
                 )
-            table.add_row(sig.name, move, read, sig.detail)
+            table.add_row(sig.name, move, read, detail)
 
         console.print(table)
         verdict = report.verdict(direction)
-        style = "red" if verdict.startswith("COUNTER") else "yellow" if verdict.startswith("CAUTION") else "green"
+        style = (
+            "red"
+            if verdict.startswith("COUNTER")
+            else "yellow"
+            if verdict.startswith(("CAUTION", "NO READ")) or "COUNTER-TREND" in verdict
+            else "green"
+        )
         console.print(f"  [{style}]{verdict}[/{style}]")
         console.print(
             "  [dim]Manual check: is the ticker in this morning's Barron's/DJ "

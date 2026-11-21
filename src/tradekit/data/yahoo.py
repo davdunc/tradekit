@@ -27,6 +27,8 @@ class YahooProvider:
             "market_cap": info.get("marketCap", 0),
             "float_shares": info.get("floatShares", 0),
             "name": info.get("shortName", ticker),
+            # Epoch seconds of the price above, so a consumer can tell an old session from a live one (#48).
+            "market_time": info.get("regularMarketTime"),
         }
 
     def get_history(self, ticker: str, period: str = "3mo", interval: str = "1d") -> pd.DataFrame:
