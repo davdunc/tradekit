@@ -119,8 +119,7 @@ class CompsReport:
         n = self.against(direction)
         if n >= COUNTER_TREND_COUNT:
             return (
-                f"COUNTER-TREND: {n} signals against {direction} — "
-                "reclaim trigger required, no breakout-bias entries"
+                f"COUNTER-TREND: {n} signals against {direction} — reclaim trigger required, no breakout-bias entries"
             )
         if n > 0:
             return f"CAUTION: {n} signal(s) against {direction}"
@@ -164,9 +163,7 @@ def build_comps_report(provider, ticker: str, sector: str | None = None) -> Comp
 
     for label, symbol in entry["comps"]:
         pct = _quote_change_pct(provider, symbol)
-        report.signals.append(
-            Signal(name=f"{label} overnight", move_pct=pct, detail=symbol)
-        )
+        report.signals.append(Signal(name=f"{label} overnight", move_pct=pct, detail=symbol))
 
     etf = entry.get("etf")
     if etf:
@@ -179,9 +176,7 @@ def build_comps_report(provider, ticker: str, sector: str | None = None) -> Comp
         # An inverse ETF gapping UP is a bearish sector tell: flip its sign
         # so the Signal's bearish/bullish reading stays consistent.
         flipped = -pct if pct is not None else None
-        report.signals.append(
-            Signal(name=f"{inverse} tell (sign flipped)", move_pct=flipped, detail="inverse ETF")
-        )
+        report.signals.append(Signal(name=f"{inverse} tell (sign flipped)", move_pct=flipped, detail="inverse ETF"))
 
     qqq = _premarket_gap_pct(provider, "QQQ")
     spy = _premarket_gap_pct(provider, "SPY")

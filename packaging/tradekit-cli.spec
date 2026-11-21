@@ -75,7 +75,7 @@ scoring, and bull/bear LLM-driven debate setups. It integrates with LifeOS
 (formerly Personal AI Infrastructure / PAI), Finviz Elite, the Falcon screener,
 and S3-compatible flat-file market data backends.
 
-Commands: analyze, cards, debate, depth, earnings, gameplan, gex, groups, init,
+Commands: analyze, cards, comps, debate, depth, earnings, gameplan, gex, groups, init,
 levels, morning, news, overnight, publish-review, regime, report, rs, sandwich,
 scan, second-day, size, watchlist, weekly-review.
 
