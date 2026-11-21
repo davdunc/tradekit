@@ -1,5 +1,7 @@
 """Tests for the sector & overnight comps analysis (offline, fake provider)."""
 
+import pytest
+
 from tradekit.analysis.comps import (
     COUNTER_TREND_COUNT,
     build_comps_report,
@@ -89,3 +91,57 @@ def test_missing_data_yields_neutral_signals():
     assert report.bearish_count == 0
     assert report.bullish_count == 0
     assert report.verdict("long").startswith("ALIGNED")
+
+
+# ----- #46 review: invalid direction and sector are errors, not wrong answers -----
+
+
+def test_against_rejects_an_unknown_direction():
+    from tradekit.analysis.comps import CompsReport
+
+    report = CompsReport(ticker="MU", sector="memory", sector_label="Memory")
+    assert report.against("long") == 0 and report.against("short") == 0
+    with pytest.raises(ValueError, match="'long' or 'short'"):
+        report.against("Long ")
+    with pytest.raises(ValueError):
+        report.verdict("flat")
+
+
+def test_unknown_explicit_sector_raises_instead_of_reading_as_unmapped():
+    from tradekit.analysis.comps import build_comps_report
+
+    with pytest.raises(ValueError, match="unknown sector 'memroy'; choose from china, crypto, memory, semis"):
+        build_comps_report(None, "MU", sector="memroy")
+
+
+def test_unmapped_ticker_without_a_sector_still_returns_none():
+    from tradekit.analysis.comps import build_comps_report
+
+    assert build_comps_report(None, "ZZZZ") is None
+
+
+def test_cli_rejects_an_unknown_sector_before_fetching_anything(monkeypatch):
+    from click.testing import CliRunner
+
+    from tradekit import cli as cli_mod
+
+    def no_provider(source):
+        raise AssertionError("no data should be fetched for an invalid --sector")
+
+    monkeypatch.setattr(cli_mod, "get_provider", no_provider)
+    result = CliRunner().invoke(cli_mod.cli, ["comps", "MU", "--sector", "memroy"])
+    assert result.exit_code == 2, result.output
+    assert "'memroy' is not a sector; choose from china, crypto, memory, semis" in result.output
+
+
+def test_cli_sector_is_case_insensitive(monkeypatch):
+    from click.testing import CliRunner
+
+    from tradekit import cli as cli_mod
+    from tradekit.analysis import comps as comps_mod
+
+    seen = {}
+    monkeypatch.setattr(cli_mod, "get_provider", lambda source: object())
+    monkeypatch.setattr(comps_mod, "build_comps_report", lambda p, t, sector=None: seen.setdefault("sector", sector))
+    result = CliRunner().invoke(cli_mod.cli, ["comps", "MU", "--sector", "MEMORY"])
+    assert seen["sector"] == "MEMORY", result.output

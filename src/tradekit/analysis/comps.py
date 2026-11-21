@@ -112,8 +112,13 @@ class CompsReport:
         return sum(1 for s in self.signals if s.bearish is False)
 
     def against(self, direction: str) -> int:
-        """How many signals oppose the intended direction."""
-        return self.bearish_count if direction == "long" else self.bullish_count
+        """How many signals oppose the intended direction ("long" or "short")."""
+        if direction == "long":
+            return self.bearish_count
+        if direction == "short":
+            return self.bullish_count
+        # Any other value used to fall through to the short side and give a wrong verdict.
+        raise ValueError(f"direction must be 'long' or 'short', got {direction!r}")
 
     def verdict(self, direction: str) -> str:
         n = self.against(direction)
@@ -151,9 +156,13 @@ def _premarket_gap_pct(provider, symbol: str) -> float | None:
 def build_comps_report(provider, ticker: str, sector: str | None = None) -> CompsReport | None:
     """Build the sector/overnight comps report for one candidate ticker.
 
-    Returns None when the ticker has no sector mapping (and none was given).
+    Returns None when the ticker has no sector mapping and no ``sector`` was given. An
+    explicit ``sector`` that isn't a COMP_MAP key raises ValueError: returning None for it too
+    made a mistyped sector read as an unmapped ticker.
     """
     ticker = ticker.upper()
+    if sector is not None and sector.lower() not in COMP_MAP:
+        raise ValueError(f"unknown sector {sector!r}; choose from {', '.join(sorted(COMP_MAP))}")
     key = (sector or TICKER_SECTOR.get(ticker) or "").lower()
     entry = COMP_MAP.get(key)
     if entry is None:

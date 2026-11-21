@@ -914,7 +914,11 @@ def overnight(ticker, stop_price, risk, shares, sessions, gap_sigmas, price, iv,
     default="long",
     help="Intended trade direction the signals are tested against.",
 )
-@click.option("--sector", default=None, help="Override sector key (memory, semis, china, crypto).")
+@click.option(
+    "--sector",
+    default=None,
+    help="Override the sector key: one of the COMP_MAP sectors (memory, semis, china, crypto).",
+)
 @source_option
 def comps(tickers, direction: str, sector: str | None, source: str | None):
     """Sector & overnight comps — Asia prices US chips six hours early.
@@ -926,8 +930,13 @@ def comps(tickers, direction: str, sector: str | None, source: str | None):
     """
     from rich.table import Table
 
-    from tradekit.analysis.comps import build_comps_report
+    from tradekit.analysis.comps import COMP_MAP, build_comps_report
 
+    # Checked against the comp map itself, so a sector added there is accepted here too.
+    if sector is not None and sector.lower() not in COMP_MAP:
+        raise click.BadParameter(
+            f"{sector!r} is not a sector; choose from {', '.join(sorted(COMP_MAP))}", param_hint="--sector"
+        )
     provider = get_provider(source)
     direction = direction.lower()
 
