@@ -1,10 +1,14 @@
 """Tests for the sector & overnight comps analysis (offline, fake provider)."""
 
+import datetime as dt
+
 import pytest
 
 from tradekit.analysis.comps import (
     COUNTER_TREND_COUNT,
+    ET,
     build_comps_report,
+    last_us_close,
 )
 
 
@@ -81,7 +85,9 @@ def test_flat_sector_only_trips_index_skew():
     assert report.verdict("long").startswith("CAUTION")
 
 
-def test_missing_data_yields_neutral_signals():
+def test_missing_data_is_no_read_not_aligned():
+    """No data is not a neutral tape (#48): it used to read "ALIGNED: sector supports long"."""
+
     class EmptyProvider(FakeProvider):
         QUOTES = {}
         PREMARKET = {}
@@ -90,7 +96,8 @@ def test_missing_data_yields_neutral_signals():
     assert report is not None
     assert report.bearish_count == 0
     assert report.bullish_count == 0
-    assert report.verdict("long").startswith("ALIGNED")
+    assert report.missing == len(report.signals) == 5
+    assert report.verdict("long").startswith("NO READ: none of the 5 signals is live")
 
 
 # ----- #46 review: invalid direction and sector are errors, not wrong answers -----
@@ -145,3 +152,133 @@ def test_cli_sector_is_case_insensitive(monkeypatch):
     monkeypatch.setattr(comps_mod, "build_comps_report", lambda p, t, sector=None: seen.setdefault("sector", sector))
     result = CliRunner().invoke(cli_mod.cli, ["comps", "MU", "--sector", "MEMORY"])
     assert seen["sector"] == "MEMORY", result.output
+
+
+# ----- #48: freshness — unavailable is not 0%, stale overnight comps don't count -----
+
+
+SAT = dt.datetime(2026, 11, 21, 14, 0, tzinfo=ET)  # weekend
+MON_0330 = dt.datetime(2026, 11, 23, 3, 30, tzinfo=ET)  # before premarket opens at 04:00
+FRI_0100 = dt.datetime(2026, 11, 20, 1, 0, tzinfo=ET)  # Korea's Friday session, before Fri's US close
+MON_0130 = dt.datetime(2026, 11, 23, 1, 30, tzinfo=ET)  # Korea's Monday session, after Fri's US close
+
+
+@pytest.mark.parametrize(
+    ("now", "close"),
+    [
+        (SAT, dt.datetime(2026, 11, 20, 16, 0, tzinfo=ET)),
+        (MON_0330, dt.datetime(2026, 11, 20, 16, 0, tzinfo=ET)),
+        (dt.datetime(2026, 11, 23, 15, 59, tzinfo=ET), dt.datetime(2026, 11, 20, 16, 0, tzinfo=ET)),
+        (dt.datetime(2026, 11, 23, 16, 0, tzinfo=ET), dt.datetime(2026, 11, 23, 16, 0, tzinfo=ET)),
+        (dt.datetime(2026, 11, 24, 21, 0, tzinfo=dt.UTC), dt.datetime(2026, 11, 24, 16, 0, tzinfo=ET)),
+    ],
+)
+def test_last_us_close(now, close):
+    assert last_us_close(now) == close
+
+
+def closed_market(asia_time):
+    """Yahoo outside premarket: has_premarket False with gap_pct 0; Asia quotes stamped ``asia_time``."""
+
+    class Provider(FakeProvider):
+        QUOTES = {
+            "005930.KS": {"price": 93.0, "prev_close": 100.0, "market_time": asia_time.timestamp()},
+            "000660.KS": {"price": 94.0, "prev_close": 100.0, "market_time": asia_time.timestamp()},
+        }
+
+        def get_premarket(self, ticker):
+            return {"gap_pct": 0, "has_premarket": False}
+
+    return Provider()
+
+
+def test_no_premarket_session_is_unavailable_not_zero():
+    report = build_comps_report(closed_market(MON_0130), "MU", now=MON_0330)
+    premarket = [s for s in report.signals if "overnight" not in s.name]
+    assert [s.name for s in premarket] == ["SOXX premarket", "SOXS tell (sign flipped)", "Index skew (QQQ-led)"]
+    assert all(s.move_pct is None and s.note == "no premarket session" for s in premarket)
+
+
+def test_before_premarket_the_verdict_says_counter_trend_cannot_be_ruled_out():
+    """Monday 03:30 ET: two live bearish Asia comps, three unavailable: the issue's example."""
+    report = build_comps_report(closed_market(MON_0130), "MU", now=MON_0330)
+    assert report.bearish_count == 2 and report.missing == 3
+    assert report.verdict("long") == (
+        "CAUTION: 2 signal(s) against long (3 of 5 signals unavailable or stale)"
+        " — too few live signals to rule out COUNTER-TREND"
+    )
+
+
+def test_weekend_overnight_comps_are_stale_and_not_counted():
+    report = build_comps_report(closed_market(FRI_0100), "MU", now=SAT)
+    samsung = report.signals[0]
+    assert samsung.stale and samsung.move_pct == pytest.approx(-7.0)
+    assert samsung.note == "stale: Fri 11-20 01:00 ET, before the last US close (Fri 11-20)"
+    assert samsung.bearish is None
+    assert report.verdict("long").startswith("NO READ")  # the weekend run from #48 no longer says CAUTION
+
+
+def test_fresh_overnight_comp_is_counted_and_stamped():
+    report = build_comps_report(closed_market(MON_0130), "MU", now=MON_0330)
+    samsung = report.signals[0]
+    assert samsung.live and samsung.bearish is True
+    assert samsung.note == "Mon 11-23 01:30 ET"
+
+
+def test_quote_without_a_market_time_counts_but_says_so():
+    report = build_comps_report(FakeProvider(), "MU", now=MON_0330)
+    assert report.signals[0].note == "session time unknown"
+    assert report.signals[0].live
+
+
+def test_unavailable_signals_do_not_hide_a_counter_trend_call():
+    """Enough live signals against still make COUNTER-TREND, with the gap stated."""
+
+    class OneMissing(FakeProvider):
+        PREMARKET = {**FakeProvider.PREMARKET, "SPY": {"gap_pct": None}}
+
+    report = build_comps_report(OneMissing(), "MU", now=MON_0330)
+    verdict = report.verdict("long")
+    assert verdict.startswith("COUNTER-TREND: 4 signals against long")
+    assert verdict.endswith("(1 of 5 signals unavailable or stale)")
+
+
+def test_aligned_verdict_also_flags_hidden_counter_trend():
+    class Quiet(FakeProvider):
+        QUOTES = {"005930.KS": {"price": 100.0, "prev_close": 100.0}}
+        PREMARKET = {"SOXX": {"gap_pct": 0.1}}
+
+    report = build_comps_report(Quiet(), "MU", now=MON_0330)
+    assert report.missing == 3
+    assert report.verdict("long").endswith("— too few live signals to rule out COUNTER-TREND")
+
+
+def test_yahoo_quote_carries_its_market_time(monkeypatch):
+    from tradekit.data import yahoo
+
+    class Ticker:
+        def __init__(self, symbol):
+            self.info = {"regularMarketPrice": 93.0, "previousClose": 100.0, "regularMarketTime": 1795586400}
+
+    monkeypatch.setattr(yahoo.yf, "Ticker", Ticker)
+    assert yahoo.YahooProvider().get_quote("005930.KS")["market_time"] == 1795586400
+
+
+def test_cli_shows_stale_and_unavailable_rows(monkeypatch):
+    import re
+
+    from click.testing import CliRunner
+
+    from tradekit import cli as cli_mod
+    from tradekit.analysis import comps as comps_mod
+
+    real = comps_mod.build_comps_report
+    monkeypatch.setattr(cli_mod, "get_provider", lambda source: closed_market(FRI_0100))
+    monkeypatch.setattr(comps_mod, "build_comps_report", lambda p, t, sector=None: real(p, t, sector, now=SAT))
+    result = CliRunner().invoke(cli_mod.cli, ["comps", "MU"])
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    out = " ".join(re.sub(r"[│┃┏┓┗┛┡┩└┘├┤┼━─╇┳╋┻┬┴]", " ", plain).split())  # rejoin wrapped cells
+    assert result.exit_code == 0, result.output
+    assert "Samsung overnight -7.00% stale 005930.KS · stale: Fri 11-20 01:00 ET, before the last US close" in out
+    assert "SOXX premarket - n/a sector ETF · no premarket session" in out
+    assert "NO READ" in out and "+0.00%" not in out

@@ -111,6 +111,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`tradekit comps` read missing data as a neutral 0.00% move** (#48). Yahoo reports "no
+  premarket session" as `gap_pct` 0, so before 04:00 ET and on weekends the sector ETF,
+  inverse ETF and index skew all read `+0.00% neutral`. With only the two Asia comps live,
+  the verdict could never reach COUNTER-TREND, at the hour a morning check is most likely
+  to run.
+  - **Premarket rows:** with no premarket session (`has_premarket` false), a row is now
+    `n/a`, with the reason. The index-skew row is shown as unavailable rather than left out.
+  - **Overnight comps:** a comp counts only if its session ended after the last US close
+    (weekdays 16:00 ET). An older one, such as Friday's Samsung session read on a Saturday,
+    is shown as `stale` and not counted. Quotes now carry Yahoo's `market_time`; a quote
+    without one is counted and labelled "session time unknown".
+  - **Verdict:** it now states how many signals were unavailable or stale, and says when
+    they are enough to hide a COUNTER-TREND call. With no live signal it is `NO READ`, not
+    `ALIGNED`.
 - **Fake test 403s were filed as real Finviz throttling** (#24, #35). Tests fed fake
   403 responses through `FinvizSession` without redirecting `API_ERROR_LOG`, so every
   suite run appended five events to `~/.local/state/api-errors/events.jsonl`, and the
