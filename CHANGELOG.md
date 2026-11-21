@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`tradekit comps TICKER...`: sector and overnight comps premarket check** (the MU lesson,
+  2026-08-24). Asia prices US chips six hours early. The command builds a five-signal table
+  per ticker:
+  - overnight Asia comps (Samsung and SK Hynix for memory, TSMC for semis);
+  - the sector ETF's premarket gap;
+  - the inverse-ETF tell, sign-flipped;
+  - the QQQ-vs-SPY skew.
+
+  With 3 or more signals against `--direction`, the thesis is downgraded to counter-trend
+  and needs a reclaim trigger. The comp map and the ticker→sector table are data and can be
+  extended. `docs/workflows/morning-gameplan.md` documents the full premarket process in a
+  form any operator or LLM harness can run.
+
 - **`tradekit overnight TICKER`: overnight-risk check before carrying a position.** A stop
   bounds an intraday loss, but the next open can land past it. The audit for Mar 9 to May 29,
   2026 put 42% of that period's loss in overnight and weekend holds.
