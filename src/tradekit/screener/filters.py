@@ -11,10 +11,15 @@ def price_filter(min_price: float = 0, max_price: float = float("inf")) -> Filte
     """Filter by price range."""
 
     def _filter(df: pd.DataFrame) -> pd.DataFrame:
-        col = "pre_price" if "pre_price" in df.columns else "price"
-        if col not in df.columns:
+        if "pre_price" not in df.columns and "price" not in df.columns:
             return df
-        return df[(df[col] >= min_price) & (df[col] <= max_price)]
+        # The premarket price when there is one, else the regular price (#51): a missing
+        # premarket price is None, not 0, and must not decide whether the row passes.
+        price = pd.to_numeric(df["pre_price"], errors="coerce") if "pre_price" in df.columns else None
+        if "price" in df.columns:
+            regular = pd.to_numeric(df["price"], errors="coerce")
+            price = regular if price is None else price.where(price.notna() & (price > 0), regular)
+        return df[price.notna() & (price >= min_price) & (price <= max_price)]
 
     return _filter
 
@@ -31,12 +36,13 @@ def volume_filter(min_volume: int = 0, column: str = "pre_volume") -> FilterFunc
 
 
 def gap_filter(min_gap_pct: float = 0) -> FilterFunc:
-    """Filter by minimum gap percentage (absolute value)."""
+    """Filter by minimum gap percentage (absolute value). A missing gap (no premarket) never passes."""
 
     def _filter(df: pd.DataFrame) -> pd.DataFrame:
         if "gap_pct" not in df.columns:
             return df
-        return df[df["gap_pct"].abs() >= min_gap_pct]
+        gap = pd.to_numeric(df["gap_pct"], errors="coerce")
+        return df[gap.notna() & (gap.abs() >= min_gap_pct)]
 
     return _filter
 

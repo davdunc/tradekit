@@ -51,10 +51,15 @@ def print_scan_results(df: pd.DataFrame, title: str = "Pre-Market Scanner"):
     table.add_column("Float", justify="right", width=10)
 
     for i, row in df.iterrows():
-        gap_pct = row.get("gap_pct", 0)
-        gap_text = Text(f"{gap_pct:+.1f}%", style=_gap_color(gap_pct))
+        gap_pct = row.get("gap_pct")
+        if pd.isna(gap_pct):  # no premarket: say so, not +0.0% (#51)
+            gap_text = Text("n/a", style="dim")
+        else:
+            gap_text = Text(f"{gap_pct:+.1f}%", style=_gap_color(gap_pct))
 
-        price = row.get("pre_price") or row.get("price", 0)
+        pre_price = row.get("pre_price")
+        # pre_price is None (NaN in a DataFrame) without a premarket; NaN is truthy, so test it (#51).
+        price = pre_price if not pd.isna(pre_price) and pre_price else row.get("price", 0)
         name = str(row.get("name", ""))[:20]
         float_shares = row.get("float_shares", 0)
 

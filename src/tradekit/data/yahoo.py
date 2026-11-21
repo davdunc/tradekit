@@ -50,7 +50,8 @@ class YahooProvider:
         prev_close = info.get("previousClose") or info.get("regularMarketPreviousClose", 0)
 
         # Use Yahoo's native pre-market change % if available, else compute
-        gap_pct = info.get("preMarketChangePercent")
+        # No premarket price means no gap (None), whatever preMarketChangePercent says (#51).
+        gap_pct = info.get("preMarketChangePercent") if pre_price is not None else None
         if gap_pct is None and pre_price and prev_close:
             gap_pct = (pre_price - prev_close) / prev_close * 100
 
@@ -59,9 +60,9 @@ class YahooProvider:
 
         return {
             "ticker": ticker,
-            "pre_price": pre_price or 0,
+            "pre_price": pre_price,
             "prev_close": prev_close or 0,
-            "gap_pct": round(gap_pct, 2) if gap_pct is not None else 0,
+            "gap_pct": round(gap_pct, 2) if gap_pct is not None else None,
             "pre_volume": pre_volume,
             "avg_volume": info.get("averageVolume", 0) or 0,
             "name": info.get("shortName", ticker),

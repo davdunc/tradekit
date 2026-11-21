@@ -424,6 +424,10 @@ class FinvizEliteProvider:
         q = self.get_quote(ticker)
         return {
             "ticker": ticker,
+            # The provider contract's keys (#51): Finviz has no premarket price, so no gap.
+            "has_premarket": False,
+            "gap_pct": None,
+            "pre_price": None,
             "ah_price": q.get("ah_price"),
             "ah_change_pct": q.get("ah_change"),
             "regular_close": q.get("price"),

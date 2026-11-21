@@ -21,13 +21,16 @@ def generate_scan_report(df: pd.DataFrame, title: str = "Pre-Market Scan") -> st
     lines.append("|---|--------|------:|-----:|-----------:|--------:|")
 
     for i, row in df.iterrows():
-        gap = row.get("gap_pct", 0)
-        price = row.get("pre_price") or row.get("price", 0)
+        gap = row.get("gap_pct")
+        gap_str = "n/a" if pd.isna(gap) else f"{gap:+.1f}%"  # no premarket is n/a, not +0.0% (#51)
+        pre_price = row.get("pre_price")
+        # pre_price is None (NaN in a DataFrame) without a premarket; NaN is truthy, so test it (#51).
+        price = pre_price if not pd.isna(pre_price) and pre_price else row.get("price", 0)
         lines.append(
             f"| {int(i) + 1} "
             f"| **{row.get('ticker', '')}** "
             f"| ${price:.2f} "
-            f"| {gap:+.1f}% "
+            f"| {gap_str} "
             f"| {_fmt_vol(row.get('pre_volume', 0))} "
             f"| {_fmt_vol(row.get('avg_volume', 0))} |"
         )

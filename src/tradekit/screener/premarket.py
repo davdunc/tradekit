@@ -27,6 +27,11 @@ MIN_SEED_AVG_VOLUME = 100_000
 ENRICHMENT_PROBE = 3
 
 
+def _abs_gap(gap: pd.Series) -> pd.Series:
+    """Sort key: |gap|, with a missing gap (None without a premarket, #51) sorted last, not a TypeError."""
+    return pd.to_numeric(gap, errors="coerce").abs()
+
+
 def _sample(tickers: list[str], n: int = 8) -> str:
     """``A, B, C (+5 more)`` for log lines, so the symbols actually attempted are visible."""
     more = f" (+{len(tickers) - n} more)" if len(tickers) > n else ""
@@ -137,7 +142,7 @@ def scan_premarket(
         return df
 
     # Step 4: Sort by absolute gap percentage
-    df = df.sort_values("gap_pct", key=abs, ascending=False).reset_index(drop=True)
+    df = df.sort_values("gap_pct", key=_abs_gap, ascending=False).reset_index(drop=True)
 
     max_results = filter_config.get("max_results", settings.screener.max_results)
     return df.head(max_results)
@@ -155,7 +160,7 @@ def scan_previous_movers(
 
     Returns:
         DataFrame with columns: ticker, name, prev_close, prev_change_pct,
-        volume_ratio, pre_price, pre_gap_pct.
+        volume_ratio, pre_price, pre_gap_pct (None without a premarket).
     """
     if provider is None:
         provider = YahooProvider()
@@ -201,8 +206,8 @@ def scan_previous_movers(
                     "prev_close": prev_close,
                     "prev_change_pct": round(change_pct, 2),
                     "volume_ratio": round(vol_ratio, 2),
-                    "pre_price": pre.get("pre_price", 0),
-                    "pre_gap_pct": pre.get("gap_pct", 0),
+                    "pre_price": pre.get("pre_price"),
+                    "pre_gap_pct": pre.get("gap_pct"),  # None without a premarket (#51), never 0
                     "has_premarket": pre.get("has_premarket", False),
                 }
             )
@@ -256,5 +261,5 @@ def scan_watchlist(
         return pd.DataFrame()
 
     df = pd.DataFrame(premarket_data)
-    df = df.sort_values("gap_pct", key=abs, ascending=False).reset_index(drop=True)
+    df = df.sort_values("gap_pct", key=_abs_gap, ascending=False).reset_index(drop=True)
     return df

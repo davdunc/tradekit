@@ -17,5 +17,16 @@ class DataProvider(Protocol):
         ...
 
     def get_premarket(self, ticker: str) -> dict:
-        """Get pre-market quote data."""
+        """Get pre-market quote data.
+
+        Every provider returns these keys (#51):
+
+        - ``has_premarket`` (bool): there is a premarket price for the current session.
+        - ``gap_pct`` (float | None): premarket price vs the previous close, in percent.
+          **None when there is no premarket price**, never 0: a 0 is indistinguishable from a
+          flat tape, and read as one it hid a closed market from ``comps`` (#48).
+        - ``pre_price`` (float | None): the premarket price, None without one.
+
+        A provider that cannot supply premarket data at all may raise ``NotImplementedError``.
+        """
         ...
