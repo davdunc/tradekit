@@ -106,7 +106,9 @@ class MassiveREST:
             ["date", "open", "high", "low", "close", "volume"]
         ]
 
-    def aggs(self, ticker: str, multiplier: int, timespan: str, start: dt.date, end: dt.date) -> pd.DataFrame:
+    def aggs(
+        self, ticker: str, multiplier: int, timespan: str, start: dt.date, end: dt.date, *, max_pages: int = 100
+    ) -> pd.DataFrame:
         """OHLCV bars, indexed by New York time, following ``next_url`` (minute bars over long ranges page).
 
         ``timespan`` is Massive's: ``minute``, ``hour``, ``day``, ``week`` or ``month``. Bars include
@@ -117,9 +119,13 @@ class MassiveREST:
             {"adjusted": "true", "sort": "asc", "limit": 50000},
         )
         rows = list(page.get("results") or [])
+        pages = 1
         while page.get("next_url"):
+            if pages >= max_pages:
+                raise MassiveError("too-many-pages", f"{ticker} aggs: more than {max_pages} pages; narrow the period")
             page = self._get_url(page["next_url"])
             rows.extend(page.get("results") or [])
+            pages += 1
         columns = ["open", "high", "low", "close", "volume"]
         if not rows:
             return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([], tz=NY, name="date"))

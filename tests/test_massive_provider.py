@@ -119,3 +119,28 @@ def test_no_key_is_a_clear_error(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(massive_rest.MassiveError, match="MASSIVE_API_KEY not set"):
         MassiveProvider()
+
+
+def test_history_paging_is_capped(monkeypatch):
+    loop = {"results": daily(1)["results"], "next_url": f"{BASE}/v2/aggs/ticker/AAPL/range/1/minute/loop"}
+    p, calls = provider(monkeypatch, {"/range/1/minute/": loop})
+    with pytest.raises(massive_rest.MassiveError, match="more than 3 pages"):
+        p._rest.aggs("AAPL", 1, "minute", dt.date(2026, 11, 1), dt.date(2026, 11, 20), max_pages=3)
+    assert len(calls) == 3
+
+
+def test_average_volume_window_covers_twenty_sessions_through_holidays(monkeypatch):
+    from tradekit.data import massive as provider_mod
+
+    requested = {}
+    p, _ = provider(monkeypatch, {"/v2/snapshot/": SNAPSHOT, "/range/1/day/": daily(25)})
+    real = p._rest.daily_bars
+
+    def spy(ticker, start, end):
+        requested["days"] = (end - start).days
+        return real(ticker, start, end)
+
+    monkeypatch.setattr(p._rest, "daily_bars", spy)
+    p.get_quote("AAPL")
+    # Thanksgiving + Christmas + New Year's in one window still leaves 20+ weekday sessions.
+    assert requested["days"] == provider_mod.AVG_VOLUME_LOOKBACK_DAYS >= 20 * 7 / 5 + 10

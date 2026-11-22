@@ -38,6 +38,8 @@ _INTERVAL = {
 }
 #: Sessions in the average-volume baseline (the snapshot carries no average).
 AVG_VOLUME_SESSIONS = 20
+#: Calendar days fetched for it: 20 sessions is ~28 days, and this leaves room for holiday weeks.
+AVG_VOLUME_LOOKBACK_DAYS = 45
 PREMARKET_OPEN = dt.time(4, 0)
 REGULAR_OPEN = dt.time(9, 30)
 
@@ -63,7 +65,7 @@ class MassiveProvider:
 
     def _avg_volume(self, ticker: str) -> float:
         today = self._clock().date()
-        bars = self._rest.daily_bars(ticker, today - dt.timedelta(days=AVG_VOLUME_SESSIONS * 2), today)
+        bars = self._rest.daily_bars(ticker, today - dt.timedelta(days=AVG_VOLUME_LOOKBACK_DAYS), today)
         done = bars[bars["date"] < today] if len(bars) else bars  # completed sessions only
         volumes = done["volume"].tail(AVG_VOLUME_SESSIONS)
         return float(volumes.mean()) if len(volumes) else 0.0
