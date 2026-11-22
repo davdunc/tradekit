@@ -184,6 +184,7 @@ async def _event_chain(
     client_id: int,
     strikes: int,
     wait: float,
+    grace: float = 1.5,
 ) -> dict[str, Any]:
     from ib_async import IB, Option, Stock
 
@@ -239,8 +240,13 @@ async def _event_chain(
         contracts = [c for c in await ib.qualifyContractsAsync(*wanted) if c and c.conId]
         tickers = [ib.reqMktData(c, "", False, False) for c in contracts]
         start = loop.time()
-        while loop.time() - start < wait:
-            if tickers and all(_number(t.bid) and _number(t.ask) for t in tickers):
+        # As in _snapshot (#45 review): stop at once with every bid and ask in; once every leg has
+        # *some* price (after hours often only a last trade) and the grace period has passed; and
+        # at once with nothing to quote. The grace lets live bid/ask beat a stale last (#56 review).
+        while tickers and loop.time() - start < wait:
+            quoted = all(_number(t.bid) and _number(t.ask) for t in tickers)
+            priced = all((_number(t.bid) and _number(t.ask)) or _number(t.last) for t in tickers)
+            if _done(priced, quoted, loop.time() - start, grace):
                 break
             await asyncio.sleep(0.1)
         for c in contracts:
@@ -269,6 +275,7 @@ def fetch_event_chain(
     *,
     strikes: int = 5,
     wait: float = 6.0,
+    grace: float = 1.5,
 ) -> dict[str, Any]:
     """The option quotes an earnings straddle needs, from IB Gateway (OPRA), in CBOE's chain shape.
 
@@ -280,4 +287,4 @@ def fetch_event_chain(
     close: the last quotes, which can be wide). Raises ``IBKRSnapshotError`` with the reason.
     """
     host, port, client_id = _gateway("")
-    return asyncio.run(_event_chain(symbol.upper(), choose_expiry, host, port, client_id, strikes, wait))
+    return asyncio.run(_event_chain(symbol.upper(), choose_expiry, host, port, client_id, strikes, wait, grace))

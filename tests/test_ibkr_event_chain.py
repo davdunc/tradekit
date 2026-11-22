@@ -80,10 +80,10 @@ def fake_ib_async(monkeypatch, *, spot=344.87, quotes=None, missing_strikes=(), 
     return requested
 
 
-def run(choose_expiry, strikes=3, wait=0.3):
+def run(choose_expiry, strikes=3, wait=0.3, grace=0.05):
     from tradekit.data.ibkr import _event_chain
 
-    return asyncio.run(_event_chain("AAPL", choose_expiry, "127.0.0.1", 4002, 18, strikes, wait))
+    return asyncio.run(_event_chain("AAPL", choose_expiry, "127.0.0.1", 4002, 18, strikes, wait, grace))
 
 
 def first(expiries):
@@ -173,3 +173,42 @@ def test_the_chain_prices_an_event_straddle(monkeypatch):
     assert result["event_expiry"] == "2026-12-04"
     assert result["straddle"] == pytest.approx(15.2)
     assert result["implied_move_pct"] == pytest.approx(15.2 / 344.87 * 100, abs=0.01)
+
+
+# ----- #56 review: don't wait out the deadline when there is nothing more to get -----
+
+
+def timed(choose_expiry, **kwargs):
+    import time
+
+    started = time.monotonic()
+    chain = run(choose_expiry, **kwargs)
+    return chain, time.monotonic() - started
+
+
+def test_last_trade_only_after_hours_returns_after_the_grace_period(monkeypatch):
+    last_only = {(345.0, r): (-1.0, -1.0, 8.35) for r in "CP"}
+    fake_ib_async(monkeypatch, quotes=last_only)
+    chain, took = timed(first, strikes=1, wait=8.0, grace=0.2)
+    assert took < 2.0, f"waited {took:.1f}s although every leg had a last trade"
+    assert all(o["last_trade_price"] == 8.35 for o in chain["options"])
+
+
+def test_full_quotes_return_at_once(monkeypatch):
+    both = {(345.0, r): (8.0, 8.2, 8.1) for r in "CP"}
+    fake_ib_async(monkeypatch, quotes=both)
+    _, took = timed(first, strikes=1, wait=8.0, grace=5.0)
+    assert took < 1.0  # well under the 5 s grace: nothing was missing
+
+
+def test_nothing_to_quote_returns_at_once(monkeypatch):
+    fake_ib_async(monkeypatch, missing_strikes=tuple(STRIKES))  # no contract qualifies
+    chain, took = timed(first, strikes=3, wait=8.0, grace=5.0)
+    assert chain["options"] == [] and took < 1.0
+
+
+def test_unpriced_legs_still_wait_to_the_deadline(monkeypatch):
+    """No bid, ask or last at all: keep waiting (up to `wait`) rather than give up early."""
+    fake_ib_async(monkeypatch)  # every leg -1/-1/nan
+    _, took = timed(first, strikes=1, wait=0.5, grace=0.05)
+    assert took >= 0.5
