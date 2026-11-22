@@ -5,13 +5,16 @@ A 0 is indistinguishable from a flat tape, and read as one it hid a closed marke
 every consumer shows a missing gap as n/a instead of +0.0% or nan%.
 """
 
+import datetime as dt
 import io
 import math
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 from rich.console import Console
 
+from tradekit.config import ET
 from tradekit.data.finviz_elite import FinvizEliteProvider
 from tradekit.data.massive import MassiveProvider
 from tradekit.screener.filters import gap_filter
@@ -61,32 +64,72 @@ def test_finviz_elite_has_no_premarket_and_says_so(monkeypatch):
     assert data["ah_price"] == 50.5  # its after-hours fields are kept
 
 
-def massive_with(monkeypatch, snapshot):
-    provider = MassiveProvider.__new__(MassiveProvider)  # no API key needed
-    monkeypatch.setattr(provider, "_call_tool", lambda name, args: snapshot)
-    monkeypatch.setattr(provider, "_run", lambda value: value)
-    return provider
+#: Fri 2026-11-20 08:15 ET: the premarket is trading.
+PREMARKET = dt.datetime(2026, 11, 20, 8, 15, tzinfo=ET)
 
 
-def test_massive_without_a_session_price_returns_none_not_zero(monkeypatch):
-    provider = massive_with(monkeypatch, {"ticker": {"session": {}, "prevDay": {"c": 100.0}}})
-    assert_no_premarket(provider.get_premarket("SOXX"))
+def minute_bars(*rows):
+    """(datetime, close, volume) rows as MassiveREST.aggs returns them."""
+    index = (
+        pd.DatetimeIndex([r[0] for r in rows], name="date").tz_convert("America/New_York")
+        if rows
+        else (pd.DatetimeIndex([], tz="America/New_York", name="date"))
+    )
+    closes = [r[1] for r in rows]
+    return pd.DataFrame(
+        {"open": closes, "high": closes, "low": closes, "close": closes, "volume": [r[2] for r in rows]}, index=index
+    )
 
 
-def test_massive_with_a_session_price_reports_the_gap(monkeypatch):
-    provider = massive_with(monkeypatch, {"ticker": {"session": {"price": 101.5}, "prevDay": {"c": 100.0}}})
-    data = provider.get_premarket("SOXX")
-    assert (data["has_premarket"], data["gap_pct"]) == (True, 1.5)
+def massive_with(bars, prev_close=100.0, now=PREMARKET):
+    """MassiveProvider over a fake REST client: no key, no network (#52)."""
+    rest = SimpleNamespace(
+        stock_snapshot=lambda t: {"prevDay": {"c": prev_close} if prev_close else {}},
+        aggs=lambda *a, **k: bars,
+    )
+    return MassiveProvider(rest=rest, clock=lambda: now)
 
 
-def test_massive_without_a_prior_close_has_no_gap(monkeypatch):
-    provider = massive_with(monkeypatch, {"ticker": {"session": {"price": 101.5}, "prevDay": {}}})
-    assert provider.get_premarket("SOXX")["gap_pct"] is None
+def test_massive_without_premarket_bars_returns_none_not_zero():
+    last_night = minute_bars((PREMARKET - dt.timedelta(hours=12), 99.0, 500))  # yesterday's post-market
+    assert_no_premarket(massive_with(last_night).get_premarket("SOXX"))
 
 
-def test_massive_batch_skips_tickers_without_premarket(monkeypatch):
-    provider = massive_with(monkeypatch, {"ticker": {"session": {}, "prevDay": {"c": 100.0}}})
-    assert provider.get_multiple_premarket(["A", "B"]) == []
+def test_massive_sums_the_premarket_minute_bars():
+    bars = minute_bars(
+        (PREMARKET.replace(hour=3, minute=59), 98.0, 9_999),  # before 04:00: not premarket
+        (PREMARKET.replace(hour=4, minute=0), 100.5, 1_000),
+        (PREMARKET.replace(hour=7, minute=30), 101.0, 2_500),
+        (PREMARKET.replace(hour=8, minute=14), 101.5, 500),
+    )
+    data = massive_with(bars).get_premarket("SOXX")
+    assert (data["has_premarket"], data["pre_price"], data["gap_pct"]) == (True, 101.5, 1.5)
+    assert data["pre_volume"] == 4_000 and data["pre_bars"] == 3
+
+
+def test_massive_after_the_open_is_not_premarket():
+    bars = minute_bars((PREMARKET, 101.5, 1_000))
+    data = massive_with(bars, now=PREMARKET.replace(hour=10)).get_premarket("SOXX")
+    assert_no_premarket(data)
+    assert data["prev_close"] == 100.0  # still reported
+
+
+def test_massive_on_a_weekend_does_not_ask_for_bars():
+    def never(*a, **k):
+        raise AssertionError("no bars request outside the premarket window")
+
+    rest = SimpleNamespace(stock_snapshot=lambda t: {"prevDay": {"c": 100.0}}, aggs=never)
+    saturday = dt.datetime(2026, 11, 21, 8, 15, tzinfo=ET)
+    assert_no_premarket(MassiveProvider(rest=rest, clock=lambda: saturday).get_premarket("SOXX"))
+
+
+def test_massive_without_a_prior_close_has_no_gap():
+    data = massive_with(minute_bars((PREMARKET, 101.5, 10)), prev_close=None).get_premarket("SOXX")
+    assert data["has_premarket"] and data["gap_pct"] is None
+
+
+def test_massive_batch_skips_tickers_without_premarket():
+    assert massive_with(minute_bars()).get_multiple_premarket(["A", "B"]) == []
 
 
 def test_backtest_may_refuse_premarket_outright():

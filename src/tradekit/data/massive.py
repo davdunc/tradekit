@@ -1,33 +1,32 @@
-"""Massive MCP data provider — fetches market data via the mcp_massive MCP server."""
+"""Massive data provider (``--source massive``), on Massive's REST API.
 
-import asyncio
-import json
+It used to talk to the ``mcp_massive`` MCP server through a ``uvx`` subprocess per call. That
+never worked against the pinned server: ``mcp_massive`` 0.6+ returns CSV and this module parsed
+JSON, so every method raised (#52). It now uses :class:`~tradekit.data.massive_rest.MassiveREST`
+(key and host from config, self rate-limited, a 403 logged and never retried). The ``mcp``
+dependency is gone with it.
+
+Shapes follow the ``DataProvider`` contract (``data/base.py``), including the premarket gap
+contract (#51): no premarket session means ``gap_pct`` and ``pre_price`` are ``None``, never 0.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
 import logging
-import os
-from datetime import datetime, timedelta
+from collections.abc import Callable
 
 import pandas as pd
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
 
-from tradekit.config import env_var, get_settings
+from tradekit.config import now_et
+from tradekit.data.massive_rest import NY, MassiveREST
 
 logger = logging.getLogger(__name__)
 
-# Map yfinance-style period strings to timedelta
-_PERIOD_MAP = {
-    "1d": timedelta(days=1),
-    "5d": timedelta(days=5),
-    "1mo": timedelta(days=30),
-    "3mo": timedelta(days=90),
-    "6mo": timedelta(days=180),
-    "1y": timedelta(days=365),
-    "2y": timedelta(days=730),
-    "5y": timedelta(days=1825),
-}
-
-# Map yfinance-style interval strings to Massive timespan + multiplier
-_INTERVAL_MAP = {
+#: yfinance-style period strings, as the other providers take them.
+_PERIOD_DAYS = {"1d": 1, "5d": 5, "1mo": 30, "3mo": 90, "6mo": 180, "1y": 365, "2y": 730, "5y": 1825}
+#: yfinance-style interval strings -> Massive (multiplier, timespan).
+_INTERVAL = {
     "1m": (1, "minute"),
     "5m": (5, "minute"),
     "15m": (15, "minute"),
@@ -37,190 +36,122 @@ _INTERVAL_MAP = {
     "1wk": (1, "week"),
     "1mo": (1, "month"),
 }
+#: Sessions in the average-volume baseline (the snapshot carries no average).
+AVG_VOLUME_SESSIONS = 20
+#: Calendar days fetched for it: 20 sessions is ~28 days, and this leaves room for holiday weeks.
+AVG_VOLUME_LOOKBACK_DAYS = 45
+PREMARKET_OPEN = dt.time(4, 0)
+REGULAR_OPEN = dt.time(9, 30)
+
+
+def in_premarket_window(now: dt.datetime) -> bool:
+    """A weekday between 04:00 and 09:30 ET. Exchange holidays aren't known here: on one, no bars
+    come back, so there is still no premarket to report."""
+    now = now.astimezone(NY)
+    return now.weekday() < 5 and PREMARKET_OPEN <= now.time() < REGULAR_OPEN
+
+
+def premarket_bars(minute_bars: pd.DataFrame, today: dt.date) -> pd.DataFrame:
+    """Today's 04:00-09:30 ET minute bars (``aggs`` includes extended hours)."""
+    if minute_bars.empty:
+        return minute_bars
+    idx = minute_bars.index
+    keep = (idx.date == today) & (idx.time >= PREMARKET_OPEN) & (idx.time < REGULAR_OPEN)
+    return minute_bars[keep]
 
 
 class MassiveProvider:
-    """Fetch market data from the Massive MCP server.
+    """``DataProvider`` on Massive's REST API. ``rest`` and ``clock`` are injectable for tests."""
 
-    Uses the MCP Python SDK to communicate with the mcp_massive server
-    over stdio. The server is spawned as a subprocess on first use.
-    """
+    def __init__(self, rest: MassiveREST | None = None, clock: Callable[[], dt.datetime] = now_et):
+        self._rest = rest if rest is not None else MassiveREST()  # raises MassiveError without a key
+        self._clock = clock
 
-    def __init__(self):
-        settings = get_settings()
-        self._api_key = settings.data.massive_api_key  # resolved once in config (#58)
-        self._package = settings.massive_mcp_package
-        if not self._api_key:
-            raise ValueError(f"{env_var('massive_api_key')} is required. Set it in .env or as an environment variable.")
-
-    def _server_params(self) -> StdioServerParameters:
-        return StdioServerParameters(
-            command="uvx",
-            args=["--from", self._package, "mcp_massive"],
-            # mcp_massive reads the same variable name tradekit's field maps to.
-            env={**os.environ, env_var("massive_api_key"): self._api_key},
-        )
-
-    async def _call_tool(self, tool_name: str, arguments: dict) -> dict:
-        """Spawn the MCP server, call a single tool, and return parsed JSON."""
-        async with stdio_client(self._server_params()) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                result = await session.call_tool(tool_name, arguments=arguments)
-                # result.content is a list of content blocks; first one has text
-                text = result.content[0].text
-                return json.loads(text)
-
-    async def _call_tools_batch(self, calls: list[tuple[str, dict]]) -> list[dict]:
-        """Spawn the MCP server once, call multiple tools, return list of parsed results."""
-        async with stdio_client(self._server_params()) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                results = []
-                for tool_name, arguments in calls:
-                    result = await session.call_tool(tool_name, arguments=arguments)
-                    text = result.content[0].text
-                    results.append(json.loads(text))
-                return results
-
-    def _run(self, coro):
-        """Run an async coroutine synchronously."""
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        if loop and loop.is_running():
-            # We're inside an existing event loop; create a new one in a thread
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                return pool.submit(asyncio.run, coro).result()
-        else:
-            return asyncio.run(coro)
+    def _avg_volume(self, ticker: str) -> float:
+        today = self._clock().date()
+        bars = self._rest.daily_bars(ticker, today - dt.timedelta(days=AVG_VOLUME_LOOKBACK_DAYS), today)
+        done = bars[bars["date"] < today] if len(bars) else bars  # completed sessions only
+        volumes = done["volume"].tail(AVG_VOLUME_SESSIONS)
+        return float(volumes.mean()) if len(volumes) else 0.0
 
     def get_quote(self, ticker: str) -> dict:
-        """Get current quote data from Massive snapshot + previous close."""
-        results = self._run(
-            self._call_tools_batch(
-                [
-                    ("get_snapshot_ticker", {"market_type": "stocks", "ticker": ticker}),
-                    ("get_previous_close_agg", {"ticker": ticker}),
-                ]
-            )
-        )
-        snap = results[0]
-        prev = results[1]
-
-        # Navigate snapshot structure
-        ticker_data = snap.get("ticker", snap)
-        day = ticker_data.get("day", {})
-        prev_day = ticker_data.get("prevDay", {})
-
-        prev_close = prev.get("results", [{}])[0].get("c", prev_day.get("c", 0))
-        price = day.get("c", 0) or ticker_data.get("lastTrade", {}).get("p", 0)
-
+        """Regular-session price (the day bar), the previous close, and a 20-session average volume."""
+        snap = self._rest.stock_snapshot(ticker)
+        day, minute, prev = snap.get("day") or {}, snap.get("min") or {}, snap.get("prevDay") or {}
+        updated = snap.get("updated")
         return {
-            "ticker": ticker,
-            "price": price,
-            "prev_close": prev_close,
-            "open": day.get("o", 0),
-            "high": day.get("h", 0),
-            "low": day.get("l", 0),
-            "volume": day.get("v", 0),
-            "avg_volume": 0,  # not directly available from snapshot
+            "ticker": ticker.upper(),
+            "price": day.get("c") or minute.get("c") or prev.get("c") or 0,
+            "prev_close": prev.get("c") or 0,
+            "open": day.get("o") or 0,
+            "high": day.get("h") or 0,
+            "low": day.get("l") or 0,
+            "volume": day.get("v") or 0,
+            "avg_volume": self._avg_volume(ticker),
+            # Not in the snapshot (the reference endpoint has them); 0 as before, not invented.
             "market_cap": 0,
             "float_shares": 0,
-            "name": ticker_data.get("name", ticker),
+            "name": ticker.upper(),
+            "market_time": updated / 1e9 if updated else None,  # epoch seconds, as Yahoo's quote carries
         }
 
     def get_history(self, ticker: str, period: str = "3mo", interval: str = "1d") -> pd.DataFrame:
-        """Get historical OHLCV data as a DataFrame."""
-        delta = _PERIOD_MAP.get(period, timedelta(days=90))
-        multiplier, timespan = _INTERVAL_MAP.get(interval, (1, "day"))
-
-        to_date = datetime.now()
-        from_date = to_date - delta
-
-        data = self._run(
-            self._call_tool(
-                "list_aggs",
-                {
-                    "ticker": ticker,
-                    "multiplier": multiplier,
-                    "timespan": timespan,
-                    "from_": from_date.strftime("%Y-%m-%d"),
-                    "to": to_date.strftime("%Y-%m-%d"),
-                    "limit": 50000,
-                },
-            )
-        )
-
-        bars = data.get("results", [])
-        if not bars:
+        """OHLCV over ``period`` at ``interval`` (yfinance-style), indexed by New York time."""
+        days = _PERIOD_DAYS.get(period, 90)
+        multiplier, timespan = _INTERVAL.get(interval, (1, "day"))
+        end = self._clock().date()
+        df = self._rest.aggs(ticker, multiplier, timespan, end - dt.timedelta(days=days), end)
+        if df.empty:
             logger.warning("No history data for %s from Massive", ticker)
-            return pd.DataFrame()
-
-        df = pd.DataFrame(bars)
-        # Massive returns: o, h, l, c, v, t (timestamp ms), vw, n
-        rename = {"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"}
-        df = df.rename(columns=rename)
-
-        if "t" in df.columns:
-            df["date"] = pd.to_datetime(df["t"], unit="ms")
-            df = df.set_index("date")
-
-        # Keep only OHLCV columns that exist
-        keep = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
-        df = df[keep]
         return df
 
     def get_premarket(self, ticker: str) -> dict:
-        """Get pre-market quote data from Massive snapshot."""
-        snap = self._run(self._call_tool("get_snapshot_ticker", {"market_type": "stocks", "ticker": ticker}))
+        """Premarket per the #51 contract, from today's 04:00-09:30 ET one-minute bars.
 
-        ticker_data = snap.get("ticker", snap)
-        session = ticker_data.get("session", {})
-        prev_day = ticker_data.get("prevDay", {})
-
-        pre_price = session.get("price", 0) or session.get("close", 0)
-        prev_close = prev_day.get("c", 0)
-        # Contract shape (#51): no price or no prior close means no gap, not 0. Whether `session`
-        # is the premarket at all is unverified, and the response isn't parsed correctly yet (#52).
-        has_premarket = bool(pre_price)
-        gap_pct = (pre_price - prev_close) / prev_close * 100 if has_premarket and prev_close else None
-
+        ``pre_price`` is the latest premarket bar's close and ``pre_volume`` the sum of those bars'
+        volume. Outside the window (or with no premarket trades yet) ``has_premarket`` is False,
+        ``pre_price`` and ``gap_pct`` are None, and the bars aren't requested. ``prev_close`` always
+        comes from the snapshot.
+        """
+        now = self._clock().astimezone(NY)
+        bars = pd.DataFrame()
+        if in_premarket_window(now):
+            bars = premarket_bars(self._rest.aggs(ticker, 1, "minute", now.date(), now.date()), now.date())
+        has_premarket = not bars.empty
+        pre_price = float(bars["close"].iloc[-1]) if has_premarket else None
+        prev_close = (self._rest.stock_snapshot(ticker).get("prevDay") or {}).get("c") or 0
+        gap = (pre_price - prev_close) / prev_close * 100 if pre_price and prev_close else None
         return {
-            "ticker": ticker,
+            "ticker": ticker.upper(),
             "has_premarket": has_premarket,
-            "pre_price": pre_price or None,
+            "pre_price": pre_price,
             "prev_close": prev_close,
-            "gap_pct": round(gap_pct, 2) if gap_pct is not None else None,
-            "pre_volume": session.get("volume", 0),
+            "gap_pct": round(gap, 2) if gap is not None else None,
+            "pre_volume": float(bars["volume"].sum()) if has_premarket else 0,
+            "pre_bars": len(bars),
+            "pre_last": bars.index[-1] if has_premarket else None,
             "avg_volume": 0,
-            "name": ticker_data.get("name", ticker),
+            "name": ticker.upper(),
             "market_cap": 0,
             "float_shares": 0,
         }
 
     def get_multiple_quotes(self, tickers: list[str]) -> list[dict]:
-        """Fetch quotes for multiple tickers."""
         results = []
         for ticker in tickers:
             try:
                 results.append(self.get_quote(ticker))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - one ticker failing must not sink the batch
                 logger.warning("Failed to fetch %s from Massive: %s", ticker, e)
         return results
 
     def get_multiple_premarket(self, tickers: list[str]) -> list[dict]:
-        """Fetch pre-market data for multiple tickers."""
         results = []
         for ticker in tickers:
             try:
                 data = self.get_premarket(ticker)
                 if data.get("has_premarket"):  # as YahooProvider does: no premarket, no row
                     results.append(data)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 logger.warning("Failed to fetch pre-market for %s from Massive: %s", ticker, e)
         return results
