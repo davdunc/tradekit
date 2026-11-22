@@ -25,15 +25,15 @@ sudo dnf install -y rpm-build rpmdevtools rpm-build-python pyproject-rpm-macros
 # 2. Set up rpmbuild tree (one-time)
 rpmdev-setuptree
 
-# 3. Create source tarball matching Source0 in the spec (for v0.5.0). The file is named
+# 3. Create source tarball matching Source0 in the spec (for v0.6.0). The file is named
 #    after the package, but its top directory after the repo, as GitHub's tarball is.
-git archive --prefix=tradekit-0.5.0/ -o ~/rpmbuild/SOURCES/tradekit-cli-0.5.0.tar.gz HEAD
+git archive --prefix=tradekit-0.6.0/ -o ~/rpmbuild/SOURCES/tradekit-cli-0.6.0.tar.gz HEAD
 
 # 4. Build
 rpmbuild -ba packaging/tradekit-cli.spec
 
 # 5. Install the result
-sudo dnf install ~/rpmbuild/RPMS/noarch/tradekit-cli-0.5.0-1.fc44.noarch.rpm
+sudo dnf install ~/rpmbuild/RPMS/noarch/tradekit-cli-0.6.0-1.fc44.noarch.rpm
 ```
 
 Verify:

@@ -22,7 +22,7 @@
 # building — a Version here with no matching tag produces an unbuildable spec.
 
 Name:           tradekit-cli
-Version:        0.5.0
+Version:        0.6.0
 Release:        1%{?dist}
 Summary:        Pre-market screening, technical analysis, and trade setup evaluation
 
@@ -148,6 +148,13 @@ PYTHONPATH=%{buildroot}%{python3_sitelib} \
 
 
 %changelog
+* Sun Nov 22 2026 David Duncan <davdunc@davidduncan.org> - 0.6.0-1
+- Release 0.6.0: gex on Massive's options snapshot and earnings on IB Gateway
+  (CBOE blocks automated access); MassiveProvider on Massive's REST API.
+- Massive settings declared once in config; POLYGON_API_KEY and MASSIVE_S3_*
+  are deprecated aliases. comps, overnight-risk, IB Gateway depth fallback.
+- Drop the python3-mcp dependency.
+
 * Sun Nov 01 2026 David Duncan <davdunc@davidduncan.org> - 0.5.0-1
 - Release 0.5.0: native Windows support (UTF-8 I/O, cross-platform file lock)
   and WSL shims for running tradekit from Windows.

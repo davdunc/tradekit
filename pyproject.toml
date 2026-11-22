@@ -2,7 +2,7 @@
 # Distribution name only: the import package and the command stay `tradekit`. The
 # `tradekit` name on PyPI belongs to an unrelated project (#30).
 name = "tradekit-cli"
-version = "0.5.0"
+version = "0.6.0"
 description = "Personal trading infrastructure for pre-market screening, technical analysis, and trade setup evaluation"
 readme = "README.md"
 license = { text = "MIT" }
