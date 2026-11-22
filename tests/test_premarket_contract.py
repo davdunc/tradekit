@@ -5,13 +5,16 @@ A 0 is indistinguishable from a flat tape, and read as one it hid a closed marke
 every consumer shows a missing gap as n/a instead of +0.0% or nan%.
 """
 
+import datetime as dt
 import io
 import math
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 from rich.console import Console
 
+from tradekit.config import ET
 from tradekit.data.finviz_elite import FinvizEliteProvider
 from tradekit.data.massive import MassiveProvider
 from tradekit.screener.filters import gap_filter
@@ -61,31 +64,46 @@ def test_finviz_elite_has_no_premarket_and_says_so(monkeypatch):
     assert data["ah_price"] == 50.5  # its after-hours fields are kept
 
 
-def massive_with(monkeypatch, snapshot):
-    provider = MassiveProvider.__new__(MassiveProvider)  # no API key needed
-    monkeypatch.setattr(provider, "_call_tool", lambda name, args: snapshot)
-    monkeypatch.setattr(provider, "_run", lambda value: value)
-    return provider
+#: Fri 2026-11-20 08:15 ET: the premarket is trading.
+PREMARKET = dt.datetime(2026, 11, 20, 8, 15, tzinfo=ET)
 
 
-def test_massive_without_a_session_price_returns_none_not_zero(monkeypatch):
-    provider = massive_with(monkeypatch, {"ticker": {"session": {}, "prevDay": {"c": 100.0}}})
+def minute_at(when, close):
+    return {"t": int(when.timestamp() * 1000), "c": close, "av": 125_000}
+
+
+def massive_with(snapshot, now=PREMARKET):
+    """MassiveProvider over a fake REST client: no key, no network (#52)."""
+    rest = SimpleNamespace(stock_snapshot=lambda t: snapshot)
+    return MassiveProvider(rest=rest, clock=lambda: now)
+
+
+def test_massive_without_a_premarket_minute_returns_none_not_zero():
+    yesterday = minute_at(PREMARKET - dt.timedelta(hours=12), 99.0)  # last night's post-market
+    provider = massive_with({"min": yesterday, "prevDay": {"c": 100.0}})
     assert_no_premarket(provider.get_premarket("SOXX"))
 
 
-def test_massive_with_a_session_price_reports_the_gap(monkeypatch):
-    provider = massive_with(monkeypatch, {"ticker": {"session": {"price": 101.5}, "prevDay": {"c": 100.0}}})
+def test_massive_with_a_premarket_minute_reports_the_gap():
+    provider = massive_with({"min": minute_at(PREMARKET, 101.5), "prevDay": {"c": 100.0}})
     data = provider.get_premarket("SOXX")
-    assert (data["has_premarket"], data["gap_pct"]) == (True, 1.5)
+    assert (data["has_premarket"], data["pre_price"], data["gap_pct"]) == (True, 101.5, 1.5)
+    assert data["pre_volume"] == 125_000
 
 
-def test_massive_without_a_prior_close_has_no_gap(monkeypatch):
-    provider = massive_with(monkeypatch, {"ticker": {"session": {"price": 101.5}, "prevDay": {}}})
+def test_massive_after_the_open_is_not_premarket():
+    open_ = PREMARKET.replace(hour=10)
+    provider = massive_with({"min": minute_at(open_, 101.5), "prevDay": {"c": 100.0}}, now=open_)
+    assert_no_premarket(provider.get_premarket("SOXX"))
+
+
+def test_massive_without_a_prior_close_has_no_gap():
+    provider = massive_with({"min": minute_at(PREMARKET, 101.5), "prevDay": {}})
     assert provider.get_premarket("SOXX")["gap_pct"] is None
 
 
-def test_massive_batch_skips_tickers_without_premarket(monkeypatch):
-    provider = massive_with(monkeypatch, {"ticker": {"session": {}, "prevDay": {"c": 100.0}}})
+def test_massive_batch_skips_tickers_without_premarket():
+    provider = massive_with({"min": {}, "prevDay": {"c": 100.0}})
     assert provider.get_multiple_premarket(["A", "B"]) == []
 
 

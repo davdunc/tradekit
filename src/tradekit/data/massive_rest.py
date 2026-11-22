@@ -106,6 +106,31 @@ class MassiveREST:
             ["date", "open", "high", "low", "close", "volume"]
         ]
 
+    def aggs(self, ticker: str, multiplier: int, timespan: str, start: dt.date, end: dt.date) -> pd.DataFrame:
+        """OHLCV bars, indexed by New York time, following ``next_url`` (minute bars over long ranges page).
+
+        ``timespan`` is Massive's: ``minute``, ``hour``, ``day``, ``week`` or ``month``. Bars include
+        extended hours. Empty frame (same columns) when there are none.
+        """
+        page = self._get(
+            f"/v2/aggs/ticker/{ticker.upper()}/range/{multiplier}/{timespan}/{start}/{end}",
+            {"adjusted": "true", "sort": "asc", "limit": 50000},
+        )
+        rows = list(page.get("results") or [])
+        while page.get("next_url"):
+            page = self._get_url(page["next_url"])
+            rows.extend(page.get("results") or [])
+        columns = ["open", "high", "low", "close", "volume"]
+        if not rows:
+            return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([], tz=NY, name="date"))
+        df = pd.DataFrame(rows).rename(columns={"o": "open", "h": "high", "l": "low", "c": "close", "v": "volume"})
+        df.index = pd.DatetimeIndex(pd.to_datetime(df["t"], unit="ms", utc=True).dt.tz_convert(NY), name="date")
+        return df[columns]
+
+    def stock_snapshot(self, ticker: str) -> dict:
+        """The raw ``ticker`` object of the stock snapshot (``day``, ``min``, ``prevDay``, ``updated``)."""
+        return self._get(f"/v2/snapshot/locale/us/markets/stocks/tickers/{ticker.upper()}").get("ticker") or {}
+
     def grouped_daily(self, day: dt.date) -> pd.DataFrame:
         j = self._get(f"/v2/aggs/grouped/locale/us/market/stocks/{day}", {"adjusted": "true"})
         return pd.DataFrame(j.get("results") or [])
@@ -156,7 +181,7 @@ class MassiveREST:
         day bar includes extended hours, so after the close this can differ from the regular-session
         close. The timestamp says which moment it is.
         """
-        snap = self._get(f"/v2/snapshot/locale/us/markets/stocks/tickers/{ticker.upper()}").get("ticker") or {}
+        snap = self.stock_snapshot(ticker)
         for bar in ("min", "day", "prevDay"):
             price = (snap.get(bar) or {}).get("c")
             if price:

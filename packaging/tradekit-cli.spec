@@ -51,7 +51,6 @@ Requires:       python3-numpy
 # (docs/SPEC.md gap G1). Do not drop this until that module is registered or removed.
 Requires:       python3-matplotlib >= 3.11.1
 Requires:       python3-pydantic-settings
-Requires:       python3-mcp
 Requires:       python3-pyarrow
 Requires:       python3-click
 Requires:       python3-rich

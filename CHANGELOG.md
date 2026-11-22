@@ -170,6 +170,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`--source massive` works: `MassiveProvider` now uses Massive's REST API, not the MCP server** (#52).
+  - Before, every method failed: the pinned `mcp_massive` server returns CSV, and the provider
+    parsed it as JSON. It also started a `uvx` subprocess for every call.
+  - Quotes come from the stock snapshot. `avg_volume` is now real: the mean of the last 20
+    completed daily bars (it was always 0). History uses `/v2/aggs`, follows `next_url`, and is
+    indexed in New York time.
+  - Premarket (the #51 contract): `has_premarket` is true only when the latest minute bar falls
+    in *today's* 04:00-09:30 ET window. `pre_price` is that minute's close and `pre_volume` is
+    the day's accumulated volume. A weekend or post-market minute is never reported as a gap.
+  - Dropped the `mcp` dependency (and its server stack in `uv.lock`), the
+    `massive_mcp_package` setting, and `python3-mcp` from the RPM spec.
 - **Premarket gap contract: "no premarket" is `None`, never a 0% gap** (#51).
   `get_premarket()` now returns `has_premarket`, `gap_pct` and `pre_price` from every
   provider. With no premarket price, `gap_pct` and `pre_price` are `None`, so a closed market

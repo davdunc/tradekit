@@ -224,7 +224,6 @@ class Settings(BaseSettings):
     alerts: AlertSettings = Field(default_factory=AlertSettings)
     config_dir: Path = PROJECT_ROOT / "config"
     data_source: str = "yahoo"
-    massive_mcp_package: str = "git+https://github.com/massive-com/mcp_massive@v0.7.0"
 
     def load_watchlists(self) -> dict[str, list[str]]:
         path = self.config_dir / "watchlists.yaml"
