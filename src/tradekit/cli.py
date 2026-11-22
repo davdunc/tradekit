@@ -2992,14 +2992,15 @@ def earnings(ticker: str, event_date: str | None, timing: str | None, as_json: b
     no expiry within 30 days of the event qualifies, the move is reported as unavailable.
 
     Date and timing come from Finviz Elite (FINVIZ_AUTH_TOKEN) unless --date and --timing
-    are both given. The option chain is CBOE's delayed quotes.
+    are both given. Option quotes come from IB Gateway (IBKR_HOST, IBKR_PORT; OPRA via the
+    US Equity and Options Add-On; tradekit-cli[ibkr]): live during the session, else the last
+    (frozen) quotes, which are labelled. CBOE's free chain now blocks automated access (#55).
     """
     import datetime as dt
     import json
 
-    from tradekit.analysis.earnings import implied_move
-    from tradekit.analysis.gex import GEXError
-    from tradekit.data.cboe import CBOEError, fetch_cboe_chain
+    from tradekit.analysis.earnings import implied_move, select_event_expiry
+    from tradekit.data.ibkr import IBKRSnapshotError, fetch_event_chain
 
     ticker = ticker.upper()
     timing = {"bmo": "BMO", "amc": "AMC"}.get((timing or "").lower(), timing)
@@ -3030,11 +3031,17 @@ def earnings(ticker: str, event_date: str | None, timing: str | None, as_json: b
             day, timing = found_day, timing or found_timing
         source = "Finviz Elite"
 
+    def event_expiry(expiries: set[dt.date]) -> dt.date | None:
+        # The #27 rule, passed to the fetch so it quotes only the expiry that holds the event.
+        return select_event_expiry(expiries, day, timing).expiry  # type: ignore[arg-type]
+
     try:
-        result = implied_move(fetch_cboe_chain(ticker), ticker=ticker, event_date=day, timing=timing)  # type: ignore[arg-type]
-    except (CBOEError, GEXError) as exc:
-        raise click.ClickException(f"Option chain unavailable: {exc}") from exc
+        chain = fetch_event_chain(ticker, event_expiry)
+    except IBKRSnapshotError as exc:
+        raise click.ClickException(f"Option quotes unavailable: {exc}") from exc
+    result = implied_move(chain, ticker=ticker, event_date=day, timing=timing)  # type: ignore[arg-type]
     result["source"] = source
+    result["quotes"] = f"IB Gateway ({chain['freshness']})"
 
     if as_json:
         click.echo(json.dumps(result, indent=2, default=str))
@@ -3043,7 +3050,11 @@ def earnings(ticker: str, event_date: str | None, timing: str | None, as_json: b
     # Plain click.echo: rich would colour the digits and could wrap the numbers apart.
     ago = (now_et().date() - day).days
     when = f" ({ago} days ago)" if ago > 1 else " (yesterday)" if ago == 1 else ""
-    click.echo(f"{ticker} earnings {day.isoformat()} {timing}{when} — date from {source}")
+    click.echo(
+        f"{ticker} earnings {day.isoformat()} {timing}{when} — date from {source}, quotes from {result['quotes']}"
+    )
+    if chain["freshness"] != "live":
+        click.echo("  Quotes are the last ones from the previous session (market closed); spreads may be wide.")
     if result["implied_move_pct"] is None:
         why = (
             "no option expiry within 30 days after the event"

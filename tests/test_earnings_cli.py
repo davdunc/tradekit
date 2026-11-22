@@ -55,12 +55,37 @@ def _chain(straddles: dict, spot=254.0) -> dict:
 AMZN = _chain({D(2026, 10, 28): 3.95, D(2026, 10, 30): 19.23})
 
 
+def _fake_event_chain(full: dict, choose_expiry, freshness: str = "live") -> dict:
+    """What data.ibkr.fetch_event_chain returns: only the expiry the rule picks gets quoted."""
+    from tradekit.analysis.gex import parse_occ_symbol
+
+    expiries = {parse_occ_symbol(o["option"])[0] for o in full["options"]}
+    chosen = choose_expiry(expiries)
+    options = [o for o in full["options"] if parse_occ_symbol(o["option"])[0] == chosen]
+    return {
+        "current_price": full["current_price"],
+        "options": options,
+        "expirations": sorted(e.isoformat() for e in expiries),
+        "freshness": freshness,
+    }
+
+
 @pytest.fixture
 def chain(monkeypatch):
-    """Serve a synthetic CBOE chain; returns a setter for other chains."""
-    holder = {"data": AMZN}
-    monkeypatch.setattr("tradekit.data.cboe.fetch_cboe_chain", lambda t: holder["data"])
-    return lambda data: holder.update(data=data)
+    """Serve a synthetic chain through the IB Gateway fetch (#55); returns a setter for others."""
+    holder = {"data": AMZN, "freshness": "live", "chosen": []}
+
+    def fake(ticker, choose_expiry, **kwargs):
+        def record(expiries):
+            holder["chosen"].append(choose_expiry(expiries))
+            return holder["chosen"][-1]
+
+        return _fake_event_chain(holder["data"], record, holder["freshness"])
+
+    monkeypatch.setattr("tradekit.data.ibkr.fetch_event_chain", fake)
+    setter = lambda data: holder.update(data=data)  # noqa: E731
+    setter.holder = holder
+    return setter
 
 
 @pytest.fixture
@@ -129,3 +154,37 @@ def test_bad_date_is_a_usage_error(chain, no_finviz):
     result = _run("AMZN", "--date", "10/29/2026")
     assert result.exit_code == 2
     assert "YYYY-MM-DD" in result.output
+
+
+# ----- #55: quotes come from IB Gateway, with their freshness -----
+
+
+def test_only_the_event_expiry_is_quoted(chain, no_finviz):
+    """The CLI passes the #27 event-expiry rule to the fetch, so the 0DTE contract is never requested."""
+    result = _run("AMZN", "--date", "2026-10-29", "--timing", "AMC", "--json")
+    assert result.exit_code == 0, result.output
+    assert chain.holder["chosen"] == [D(2026, 10, 30)]
+
+
+def test_json_names_the_quote_source(chain, no_finviz):
+    data = json.loads(_run("AMZN", "--date", "2026-10-29", "--timing", "AMC", "--json").stdout)
+    assert data["quotes"] == "IB Gateway (live)"
+
+
+def test_frozen_quotes_are_labelled(chain, no_finviz):
+    chain.holder["freshness"] = "frozen"
+    out = _plain(_run("AMZN", "--date", "2026-10-29", "--timing", "AMC").output)
+    assert "quotes from IB Gateway (frozen)" in out
+    assert "last ones from the previous session" in out
+
+
+def test_gateway_unavailable_is_a_clean_error(monkeypatch, no_finviz):
+    from tradekit.data import ibkr
+
+    def refuse(ticker, choose_expiry, **kwargs):
+        raise ibkr.IBKRSnapshotError("set IBKR_HOST and IBKR_PORT for IB Gateway (4002 paper, 4001 live)")
+
+    monkeypatch.setattr(ibkr, "fetch_event_chain", refuse)
+    result = _run("AMZN", "--date", "2026-10-29", "--timing", "AMC")
+    assert result.exit_code == 1
+    assert "Option quotes unavailable: set IBKR_HOST and IBKR_PORT" in result.output
