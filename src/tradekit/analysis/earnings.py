@@ -124,8 +124,9 @@ def implied_move(
     """Implied earnings move for ``ticker``, priced on the event expiry.
 
     Args:
-        chain: The CBOE delayed-quotes ``data`` object, ``{current_price, options: [...]}``,
-            as returned by :func:`tradekit.data.cboe.fetch_cboe_chain`. No I/O here (#49).
+        chain: ``{current_price, options: [{option, bid, ask, last_trade_price}]}`` with OCC
+            option symbols: what :func:`tradekit.data.ibkr.fetch_event_chain` returns (IB
+            Gateway, #55), and the shape of CBOE's delayed-quotes ``data``. No I/O here (#49).
         ticker: Underlying symbol.
         event_date: Earnings release date.
         timing: ``"BMO"``, ``"AMC"`` or ``"unknown"``.
