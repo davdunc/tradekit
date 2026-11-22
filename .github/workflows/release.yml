@@ -4,6 +4,12 @@ name: Release
 # (created from the tag's CHANGELOG section if it doesn't exist yet), then publishes
 # them to PyPI as `tradekit-cli` through trusted publishing.
 #
+# PyPI publishing is opt-in, so a tag push alone only makes the GitHub release:
+#   - per run: Actions > Release > Run workflow, with "Publish to PyPI" ticked;
+#   - for every tag: set the repository variable PYPI_PUBLISH to `true`
+#     (gh variable set PYPI_PUBLISH --body true).
+# Without the trusted publisher below, an opted-in run fails with `invalid-publisher`.
+#
 # The distribution was renamed from `tradekit`, which on PyPI belongs to an unrelated
 # project (#30). Tags from before the rename still build a `tradekit` distribution, so
 # the PyPI job only runs when the build produced `tradekit_cli` files.
@@ -18,8 +24,12 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to (re)build and attach, e.g. v0.5.0"
+        description: "Existing tag to (re)build and attach, e.g. v0.6.0"
         required: true
+      pypi:
+        description: "Publish to PyPI (needs the trusted publisher on pypi.org)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write  # create the release and upload assets
@@ -66,10 +76,15 @@ jobs:
             gh release create "$TAG" dist/* --verify-tag --title "tradekit ${TAG#v}" --notes-file notes.md
           fi
 
-      - name: Check the distribution name
+      - name: Check the distribution name and whether PyPI is opted in
         id: dist
+        env:
+          OPT_IN: ${{ inputs.pypi == true || vars.PYPI_PUBLISH == 'true' }}
         run: |
-          if ls dist/tradekit_cli-* >/dev/null 2>&1; then
+          if [ "$OPT_IN" != "true" ]; then
+            echo "publishable=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::PyPI publishing is opt-in: tick 'Publish to PyPI' on a manual run, or set the PYPI_PUBLISH variable to true."
+          elif ls dist/tradekit_cli-* >/dev/null 2>&1; then
             echo "publishable=true" >> "$GITHUB_OUTPUT"
           else
             echo "publishable=false" >> "$GITHUB_OUTPUT"
