@@ -88,6 +88,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`tradekit gex` reads its option chain from Massive's options snapshot by default** (#55).
+  CBOE's free chain now refuses automated access.
+  - `MassiveREST.option_chain()` pages `GET /v3/snapshot/options/{underlying}` (250 contracts a
+    page, only up to `--max-dte`), and `chain_from_snapshot()` maps the results (OCC symbol,
+    `open_interest`, `implied_volatility`, the underlying's price and `timeframe`) to the chain
+    `compute_gex` already reads. The GEX maths is unchanged.
+  - Index roots (SPX, NDX, RUT, VIX, XSP, DJX) are requested as `I:` symbols. A `next_url` is
+    followed only on Massive's own API hosts, so the key can't go anywhere else.
+  - `--source massive|cboe` (default `massive`). The output's new **Data** line names the source
+    and Massive's freshness (`delayed` or `real-time`).
+  - Needs `POLYGON_API_KEY` and an options plan that includes chain snapshots. A 403 says the
+    plan doesn't, and is never retried. `--source cboe` explains the CBOE block (#55).
+
 - **`analysis/` does no I/O** (#49). The SPEC calls `analysis` pure computation, but three
   modules fetched market data themselves.
   - **CBOE chain:** `fetch_cboe_chain` moved from `analysis.gex` to the new `data/cboe.py`

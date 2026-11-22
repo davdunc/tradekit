@@ -311,6 +311,7 @@ def format_markdown(result: dict[str, Any]) -> str:
         f"- **Zero-gamma flip:** {flip_str}",
         f"- **Tape-read implication:** {result['implication']}",
         f"- **Coverage:** {result['contracts_scanned']:,} contracts across {result['expiries_scanned']} expiries",
+        *([f"- **Data:** {result['source']}"] if result.get("source") else []),
         "",
         "**Top 5 magnet strikes (by gamma magnitude):**",
         "",

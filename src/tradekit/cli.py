@@ -2884,24 +2884,63 @@ def debate(ticker: str, period: str, level: str, no_persist: bool, source: str |
     show_default=True,
     help="Risk-free rate — the 3-month bill, not fed funds.",
 )
+@click.option(
+    "--source",
+    "chain_source",
+    type=click.Choice(["massive", "cboe"], case_sensitive=False),
+    default="massive",
+    show_default=True,
+    help="Option chain: Massive's options snapshot (POLYGON_API_KEY, an options plan), or CBOE (blocked, #55).",
+)
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON instead of markdown.")
-def gex(ticker: str, max_dte: int, rate: float, as_json: bool):
+def gex(ticker: str, max_dte: int, rate: float, chain_source: str, as_json: bool):
     """Dealer gamma exposure snapshot — the regime read for the morning plan.
 
     Negative GEX means dealers amplify moves: trends extend and breakouts follow
     through. Positive GEX means they dampen: ranges hold and fades work. The top
     magnet strikes double as intraday targets and as acceleration levels when price
     breaks through one.
+
+    The chain (open interest and implied volatility per contract) comes from Massive's
+    options chain snapshot by default. CBOE's free chain now refuses automated access (#55).
     """
+    import datetime as dt
     import json
 
     from tradekit.analysis.gex import GEXError, compute_gex, format_markdown, to_dict
-    from tradekit.data.cboe import CBOEError, fetch_cboe_chain
+
+    if chain_source.lower() == "cboe":
+        from tradekit.data.cboe import CBOEError, fetch_cboe_chain
+
+        try:
+            chain = fetch_cboe_chain(ticker)
+        except CBOEError as exc:
+            raise click.ClickException(
+                f"{exc}. CBOE blocks automated access since about 2026-11-19 (#55); use --source massive."
+            ) from exc
+        source = "CBOE (delayed)"
+    else:
+        from tradekit.data.massive_rest import MassiveError, MassiveREST
+
+        try:
+            client = MassiveREST()
+            # Ask only for the window compute_gex will use: fewer pages, same answer.
+            chain = client.option_chain(ticker, expiration_lte=now_et().date() + dt.timedelta(days=max_dte))
+        except MassiveError as exc:
+            if exc.status == "no-key":
+                hint = "set POLYGON_API_KEY (your Massive key) in .env"
+            elif exc.status == 403:
+                hint = "Massive refused it (403): this key's plan doesn't include options chain snapshots"
+            else:
+                hint = str(exc)
+            raise click.ClickException(f"Option chain unavailable from Massive: {hint}") from exc
+        source = f"Massive ({chain['freshness']}, {chain['contracts']:,} contracts in {chain['pages']} pages)"
 
     try:
-        result = compute_gex(fetch_cboe_chain(ticker), ticker=ticker, max_dte=max_dte, rate=rate)
-    except (CBOEError, GEXError) as exc:
+        result = compute_gex(chain, ticker=ticker, max_dte=max_dte, rate=rate)
+    except GEXError as exc:
         raise click.ClickException(str(exc)) from exc
+    result["source"] = source
 
     if as_json:
         click.echo(json.dumps(to_dict(result), indent=2, default=str))

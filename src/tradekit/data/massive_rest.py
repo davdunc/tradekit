@@ -25,6 +25,10 @@ from tradekit.data.finviz_http import RateLimiter, redact
 
 BASE = "https://api.polygon.io"
 NY = ZoneInfo("America/New_York")
+#: Hosts a ``next_url`` may point at. The API key is appended to it, so never anywhere else.
+API_HOSTS = ("api.polygon.io", "api.massive.com")
+#: Cash-index options are requested under Massive's ``I:`` prefix: the bare root returns no greeks.
+INDEX_UNDERLYINGS = {"SPX", "NDX", "RUT", "VIX", "XSP", "DJX"}
 
 
 class MassiveError(RuntimeError):
@@ -64,9 +68,15 @@ class MassiveREST:
         self.requests_made = 0
 
     def _get(self, path: str, params: dict | None = None) -> dict:
+        return self._get_url(f"{BASE}{path}", params)
+
+    def _get_url(self, url: str, params: dict | None = None) -> dict:
+        from urllib.parse import urlparse
+
+        if urlparse(url).hostname not in API_HOSTS:  # a next_url elsewhere would get our key
+            raise MassiveError("bad-host", url)
         self.limiter.acquire()
         self.requests_made += 1
-        url = f"{BASE}{path}"
         try:
             r = requests.get(url, params={**(params or {}), "apiKey": self.api_key}, timeout=self.timeout)
         except requests.RequestException as e:
@@ -93,3 +103,58 @@ class MassiveREST:
     def grouped_daily(self, day: dt.date) -> pd.DataFrame:
         j = self._get(f"/v2/aggs/grouped/locale/us/market/stocks/{day}", {"adjusted": "true"})
         return pd.DataFrame(j.get("results") or [])
+
+    def option_chain(self, underlying: str, *, expiration_lte: dt.date | None = None, max_pages: int = 200) -> dict:
+        """Every option contract on ``underlying`` expiring by ``expiration_lte``, from one paged snapshot.
+
+        ``GET /v3/snapshot/options/{underlying}`` at 250 contracts a page, following ``next_url``.
+        Needs an options plan with snapshots (Starter and up; real-time on Advanced). A 403 means the
+        key isn't entitled; it is logged and raised like any other, never retried.
+        """
+        symbol = underlying.upper()
+        path_symbol = f"I:{symbol}" if symbol in INDEX_UNDERLYINGS else symbol
+        params: dict = {"limit": 250}
+        if expiration_lte is not None:
+            params["expiration_date.lte"] = expiration_lte.isoformat()
+        page = self._get(f"/v3/snapshot/options/{path_symbol}", params)
+        results = list(page.get("results") or [])
+        pages = 1
+        while page.get("next_url"):
+            if pages >= max_pages:
+                raise MassiveError("too-many-pages", f"{path_symbol}: more than {max_pages} pages; narrow --max-dte")
+            page = self._get_url(page["next_url"])
+            results.extend(page.get("results") or [])
+            pages += 1
+        chain = chain_from_snapshot(results)
+        chain["pages"] = pages
+        return chain
+
+
+# ----- options chain snapshot, for tradekit gex (#55: CBOE blocks automated access) -----
+
+
+def chain_from_snapshot(results: list[dict]) -> dict:
+    """Massive option-chain snapshot results in the chain shape ``analysis.gex.compute_gex`` reads.
+
+    ``{"current_price", "options": [{"option", "open_interest", "iv"}], "freshness", "contracts"}``.
+    ``option`` is the OCC symbol (Massive's ``details.ticker`` without its ``O:`` prefix). A
+    contract with no implied volatility (Massive omits greeks/IV for some deep in-the-money
+    contracts) is kept with ``iv`` 0, which ``compute_gex`` skips. ``freshness`` is the
+    underlying's ``timeframe`` (``delayed`` or ``real-time``), as Massive reports it.
+    """
+    spot = freshness = None
+    options = []
+    for r in results:
+        asset = r.get("underlying_asset") or {}
+        if spot is None and asset.get("price"):
+            spot = asset["price"]
+            freshness = str(asset.get("timeframe") or "unknown").lower()
+        ticker = (r.get("details") or {}).get("ticker") or ""
+        options.append(
+            {
+                "option": ticker.removeprefix("O:"),
+                "open_interest": r.get("open_interest") or 0,
+                "iv": r.get("implied_volatility") or 0,
+            }
+        )
+    return {"current_price": spot, "options": options, "freshness": freshness or "unknown", "contracts": len(options)}
