@@ -88,6 +88,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`tradekit gex` reads its option chain from Massive's options snapshot by default** (#55).
+  CBOE's free chain now refuses automated access.
+  - `MassiveREST.option_chain()` pages `GET /v3/snapshot/options/{underlying}` (250 contracts a
+    page, only up to `--max-dte`), and `chain_from_snapshot()` maps the results (OCC symbol,
+    `open_interest`, `implied_volatility`, the underlying's price and `timeframe`) to the chain
+    `compute_gex` already reads. The GEX maths is unchanged.
+  - Index roots (SPX, NDX, RUT, VIX, XSP, DJX) are requested as `I:` symbols. A `next_url` is
+    followed only on Massive's own API hosts, so the key can't go anywhere else.
+  - `--source massive|cboe` (default `massive`). The output's new **Data** line names the source
+    and Massive's freshness (`delayed` or `real-time`).
+  - Needs `MASSIVE_API_KEY` and an options plan that includes chain snapshots. A 403 says the
+    plan doesn't, and is never retried. `--source cboe` explains the CBOE block (#55).
+  - Some plans return no underlying price or delay indicator in the options snapshot (seen live
+    2026-11-22). Spot then comes from Massive's stock snapshot, and the Data line gives the
+    options' and spot's as-of times instead of claiming `delayed` or `real-time`. Index
+    underlyings without a level are refused, not guessed.
+- **Massive settings are declared once, in `config.py`; Polygon names are deprecated** (#58).
+  - `DataSettings` owns `massive_api_key`, `massive_api_base` (default
+    `https://api.massive.com`) and the flat-file keys.
+  - `POLYGON_API_KEY` and `MASSIVE_S3_ACCESS_KEY` / `MASSIVE_S3_SECRET_KEY` are deprecated
+    aliases in `config.ENV_ALIASES`. They're resolved through the same `.env` chain and
+    precedence as pydantic, fill a field only when its own variable is unset, and warn once.
+  - The `polygon_api_key` setting and `blotter.py`'s private `.env` reader are gone. The REST
+    client, blotter, backtest and MCP providers, `init` wizard and `gex` messages read
+    settings or `config.env_var()`.
+  - `tests/test_config_massive.py` checks resolution against real `.env` files, and fails on
+    any Massive host or vendor variable name in a string literal outside `config.py` (it
+    flags 17 in `main`).
 - **`tradekit earnings` prices the straddle from IB Gateway, not CBOE** (#55). CBOE's
   delayed-quotes API now refuses automated requests (Cloudflare 403 since about 2026-11-19), and
   its terms treat machine access as licensed use.
@@ -101,7 +129,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Type 1 returns no option bid/ask outside the session. The output names the source and
     whether the quotes were live or frozen (the stalest data used), and warns that after-hours
     spreads may be wide. JSON adds `quotes`.
-  - `tradekit gex` still depends on CBOE and fails until it has a new source (#55).
+  - `tradekit gex` moved to Massive's options snapshot (the entry above), so both commands #55
+    broke work again.
 
 - **`analysis/` does no I/O** (#49). The SPEC calls `analysis` pure computation, but three
   modules fetched market data themselves.
