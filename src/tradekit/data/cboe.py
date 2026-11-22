@@ -1,12 +1,16 @@
-"""CBOE delayed-quotes option chain: the only network access behind ``gex`` and ``earnings``.
+"""CBOE delayed-quotes option chain, the source behind ``gex``. **Blocked since 2026-11-19/20.**
 
-Free, no API key, and it carries real open interest (yfinance was retired for chains on
-2026-08-11 because its ``openInterest`` read 0 across every expiry). Quotes are **delayed**:
-CBOE's public CDN, typically about 15 minutes behind.
+CBOE's delayed-quotes API now refuses automated requests with a Cloudflare 403 ("Sorry, you
+have been blocked"). CBOE's terms treat machine access as licensed non-display use, so this is
+not to be worked around (#55). Until ``gex`` has a licensed or IBKR source, this fetch fails
+with ``CBOEError``. ``earnings`` moved to IB Gateway (``data.ibkr.fetch_event_chain``).
+
+Free and keyless while it lasted, with real open interest (yfinance was retired for chains on
+2026-08-11 because its ``openInterest`` read 0 across every expiry). Quotes were **delayed**,
+typically about 15 minutes.
 
 Lives in ``data/`` so that ``analysis/`` stays pure (SPEC, #49): ``analysis.gex.compute_gex``
-and ``analysis.earnings.implied_move`` take the chain this returns, so a test or a replay of a
-saved chain needs no network at all.
+takes the chain this returns, so a test or a replay of a saved chain needs no network.
 """
 
 from __future__ import annotations

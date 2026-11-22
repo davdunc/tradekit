@@ -88,6 +88,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`tradekit earnings` prices the straddle from IB Gateway, not CBOE** (#55). CBOE's
+  delayed-quotes API now refuses automated requests (Cloudflare 403 since about 2026-11-19), and
+  its terms treat machine access as licensed use.
+  - The new `data.ibkr.fetch_event_chain` lists the expiries, lets the #27 event-expiry rule
+    pick one (passed in by the CLI, so `data/` stays below `analysis/`), and quotes only the
+    strikes nearest spot on that expiry, so the request is a few contracts, not a chain. It
+    returns the chain shape `implied_move` already takes.
+  - Needs `IBKR_HOST`/`IBKR_PORT`, `tradekit-cli[ibkr]`, and OPRA (the US Equity and Options
+    Add-On).
+  - Quotes use market data type 2: live during the session, else the last frozen quotes.
+    Type 1 returns no option bid/ask outside the session. The output names the source and
+    whether the quotes were live or frozen (the stalest data used), and warns that after-hours
+    spreads may be wide. JSON adds `quotes`.
+  - `tradekit gex` still depends on CBOE and fails until it has a new source (#55).
+
 - **`analysis/` does no I/O** (#49). The SPEC calls `analysis` pure computation, but three
   modules fetched market data themselves.
   - **CBOE chain:** `fetch_cboe_chain` moved from `analysis.gex` to the new `data/cboe.py`
