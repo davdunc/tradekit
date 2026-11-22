@@ -44,16 +44,20 @@ PREMARKET_OPEN = dt.time(4, 0)
 REGULAR_OPEN = dt.time(9, 30)
 
 
-def _bar_time(bar: dict) -> dt.datetime | None:
-    t = bar.get("t")
-    return dt.datetime.fromtimestamp(t / 1000, NY) if t else None
-
-
-def in_premarket(minute_bar: dict, now: dt.datetime) -> bool:
-    """The latest minute bar falls in *today's* 04:00-09:30 ET window: a premarket session is on."""
-    when = _bar_time(minute_bar)
+def in_premarket_window(now: dt.datetime) -> bool:
+    """A weekday between 04:00 and 09:30 ET. Exchange holidays aren't known here: on one, no bars
+    come back, so there is still no premarket to report."""
     now = now.astimezone(NY)
-    return when is not None and when.date() == now.date() and PREMARKET_OPEN <= when.time() < REGULAR_OPEN
+    return now.weekday() < 5 and PREMARKET_OPEN <= now.time() < REGULAR_OPEN
+
+
+def premarket_bars(minute_bars: pd.DataFrame, today: dt.date) -> pd.DataFrame:
+    """Today's 04:00-09:30 ET minute bars (``aggs`` includes extended hours)."""
+    if minute_bars.empty:
+        return minute_bars
+    idx = minute_bars.index
+    keep = (idx.date == today) & (idx.time >= PREMARKET_OPEN) & (idx.time < REGULAR_OPEN)
+    return minute_bars[keep]
 
 
 class MassiveProvider:
@@ -102,12 +106,20 @@ class MassiveProvider:
         return df
 
     def get_premarket(self, ticker: str) -> dict:
-        """Premarket per the #51 contract: ``has_premarket`` only while today's premarket is trading."""
-        snap = self._rest.stock_snapshot(ticker)
-        minute, prev = snap.get("min") or {}, snap.get("prevDay") or {}
-        prev_close = prev.get("c") or 0
-        has_premarket = in_premarket(minute, self._clock()) and bool(minute.get("c"))
-        pre_price = minute.get("c") if has_premarket else None
+        """Premarket per the #51 contract, from today's 04:00-09:30 ET one-minute bars.
+
+        ``pre_price`` is the latest premarket bar's close and ``pre_volume`` the sum of those bars'
+        volume. Outside the window (or with no premarket trades yet) ``has_premarket`` is False,
+        ``pre_price`` and ``gap_pct`` are None, and the bars aren't requested. ``prev_close`` always
+        comes from the snapshot.
+        """
+        now = self._clock().astimezone(NY)
+        bars = pd.DataFrame()
+        if in_premarket_window(now):
+            bars = premarket_bars(self._rest.aggs(ticker, 1, "minute", now.date(), now.date()), now.date())
+        has_premarket = not bars.empty
+        pre_price = float(bars["close"].iloc[-1]) if has_premarket else None
+        prev_close = (self._rest.stock_snapshot(ticker).get("prevDay") or {}).get("c") or 0
         gap = (pre_price - prev_close) / prev_close * 100 if pre_price and prev_close else None
         return {
             "ticker": ticker.upper(),
@@ -115,7 +127,9 @@ class MassiveProvider:
             "pre_price": pre_price,
             "prev_close": prev_close,
             "gap_pct": round(gap, 2) if gap is not None else None,
-            "pre_volume": (minute.get("av") or 0) if has_premarket else 0,
+            "pre_volume": float(bars["volume"].sum()) if has_premarket else 0,
+            "pre_bars": len(bars),
+            "pre_last": bars.index[-1] if has_premarket else None,
             "avg_volume": 0,
             "name": ticker.upper(),
             "market_cap": 0,

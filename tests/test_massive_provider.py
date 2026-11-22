@@ -12,7 +12,7 @@ import pytest
 
 from tradekit.config import ET
 from tradekit.data import massive_rest
-from tradekit.data.massive import MassiveProvider, in_premarket
+from tradekit.data.massive import MassiveProvider, in_premarket_window, premarket_bars
 from tradekit.data.massive_rest import NY, MassiveREST
 
 BASE = "https://massive.test"
@@ -96,19 +96,60 @@ def test_empty_history_keeps_the_columns(monkeypatch):
     assert isinstance(df.index, pd.DatetimeIndex)
 
 
-def test_saturday_has_no_premarket_even_with_a_friday_post_market_minute(monkeypatch):
-    p, _ = provider(monkeypatch, {"/v2/snapshot/": SNAPSHOT})
+def test_premarket_bars_requested_for_today_and_summed(monkeypatch):
+    now = dt.datetime(2026, 11, 20, 8, 15, tzinfo=ET)
+    minutes = {
+        "results": [
+            {
+                "t": int(dt.datetime(2026, 11, 20, h, m, tzinfo=NY).timestamp() * 1000),
+                "c": c,
+                "v": v,
+                "o": c,
+                "h": c,
+                "l": c,
+            }
+            for h, m, c, v in [(4, 0, 345.0, 1000), (6, 0, 346.0, 2000), (8, 14, 347.0, 3000)]
+        ]
+    }
+    p, calls = provider(monkeypatch, {"/range/1/minute/": minutes, "/v2/snapshot/": SNAPSHOT}, now=now)
+    data = p.get_premarket("AAPL")
+    assert (data["pre_price"], data["pre_volume"], data["pre_bars"]) == (347.0, 6000, 3)
+    assert data["gap_pct"] == round((347.0 - 349.21) / 349.21 * 100, 2)
+    assert any("/range/1/minute/2026-11-20/2026-11-20" in c for c in calls)
+
+
+def test_saturday_has_no_premarket_and_makes_no_bars_request(monkeypatch):
+    p, calls = provider(monkeypatch, {"/v2/snapshot/": SNAPSHOT})
     data = p.get_premarket("AAPL")
     assert (data["has_premarket"], data["pre_price"], data["gap_pct"]) == (False, None, None)
+    assert not any("/range/" in c for c in calls)
 
 
 @pytest.mark.parametrize(
-    ("hhmm", "expected"),
-    [((3, 59), False), ((4, 0), True), ((9, 29), True), ((9, 30), False), ((16, 5), False)],
+    ("when", "expected"),
+    [
+        (dt.datetime(2026, 11, 20, 3, 59), False),
+        (dt.datetime(2026, 11, 20, 4, 0), True),
+        (dt.datetime(2026, 11, 20, 9, 29), True),
+        (dt.datetime(2026, 11, 20, 9, 30), False),
+        (dt.datetime(2026, 11, 21, 8, 0), False),  # Saturday
+    ],
 )
-def test_premarket_window(hhmm, expected):
-    when = dt.datetime(2026, 11, 20, *hhmm, tzinfo=NY)
-    assert in_premarket({"t": int(when.timestamp() * 1000)}, now=when) is expected
+def test_premarket_window(when, expected):
+    assert in_premarket_window(when.replace(tzinfo=NY)) is expected
+
+
+def test_premarket_bars_keep_only_todays_window():
+    idx = pd.DatetimeIndex(
+        [
+            dt.datetime(2026, 11, 19, 19, 0, tzinfo=NY),
+            dt.datetime(2026, 11, 20, 3, 59, tzinfo=NY),
+            dt.datetime(2026, 11, 20, 4, 0, tzinfo=NY),
+            dt.datetime(2026, 11, 20, 9, 30, tzinfo=NY),
+        ]
+    )
+    df = pd.DataFrame({"close": [1, 2, 3, 4], "volume": [1, 1, 1, 1]}, index=idx)
+    assert premarket_bars(df, dt.date(2026, 11, 20))["close"].tolist() == [3]
 
 
 def test_no_key_is_a_clear_error(monkeypatch):
