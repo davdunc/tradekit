@@ -22,8 +22,7 @@
 # These are NOT set here. Put them in ~/.env or your shell profile:
 #
 #   FINVIZ_AUTH_TOKEN=your-elite-token-here
-#   MASSIVE_API_KEY=your-massive-key-here
-#   POLYGON_API_KEY=your-polygon-key-here   # alias for MASSIVE_API_KEY
+#   MASSIVE_API_KEY=your-massive-key-here   # POLYGON_API_KEY is a deprecated alias
 #
 # When FINVIZ_AUTH_TOKEN is unset, tradekit's Finviz integration falls back to
 # the public-site scraper (vendored finvizfinance). Some columns (incl.

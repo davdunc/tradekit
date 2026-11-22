@@ -3,7 +3,6 @@
 import gzip
 import io
 import logging
-import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -45,12 +44,14 @@ class BacktestProvider:
     """
 
     def __init__(self):
+        from tradekit.config import env_var
+
         settings = get_settings()
-        access_key = settings.data.backtest_access_key or os.environ.get("BACKTEST_ACCESS_KEY", "")
-        secret_key = settings.data.backtest_secret_key or os.environ.get("BACKTEST_SECRET_KEY", "")
+        # Resolved once in config (#58), with the MASSIVE_S3_* aliases; nothing read here directly.
+        access_key, secret_key = settings.data.backtest_access_key, settings.data.backtest_secret_key
         if not access_key or not secret_key:
             raise ValueError(
-                "BACKTEST_ACCESS_KEY and BACKTEST_SECRET_KEY are required. "
+                f"{env_var('backtest_access_key')} and {env_var('backtest_secret_key')} are required. "
                 "Set them in .env or as environment variables."
             )
 

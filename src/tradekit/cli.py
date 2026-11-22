@@ -9,7 +9,7 @@ import click
 from rich.console import Console
 
 from tradekit.analysis.gex import DEFAULT_RATE as GEX_DEFAULT_RATE
-from tradekit.config import get_settings, now_et, shared_env_path
+from tradekit.config import ET, env_var, get_settings, now_et, shared_env_path
 from tradekit.data.finviz_http import FinvizThrottled, FinvizUnavailable
 from tradekit.errors import EnrichmentError
 from tradekit.paths import data_dir as tradekit_data_dir
@@ -1893,12 +1893,13 @@ def gameplan(no_open: bool, no_youtube: bool, source: str | None):
 
 
 # Ordered (key, prompt, sensitive) tuples for the init wizard.
+# Names come from the settings model (env_var), never retyped (#58).
 _INIT_KEYS: list[tuple[str, str, bool]] = [
-    ("FINVIZ_API_KEY", "Finviz Elite API key (optional — enables news + export)", True),
-    ("ALPHAVANTAGE_API_KEY", "Alpha Vantage API key (optional — fundamentals)", True),
-    ("MASSIVE_API_KEY", "Massive.com API key (optional — tick data)", True),
-    ("BACKTEST_ACCESS_KEY", "Backtest S3 access key (optional)", True),
-    ("BACKTEST_SECRET_KEY", "Backtest S3 secret key (optional)", True),
+    (env_var("finviz_api_key"), "Finviz Elite API key (optional — enables news + export)", True),
+    (env_var("alphavantage_api_key"), "Alpha Vantage API key (optional — fundamentals)", True),
+    (env_var("massive_api_key"), "Massive API key (optional — gex, regime, tick data)", True),
+    (env_var("backtest_access_key"), "Massive S3 flat-file access key (optional)", True),
+    (env_var("backtest_secret_key"), "Massive S3 flat-file secret key (optional)", True),
     ("SLACK_WEBHOOK_URL", "Slack incoming webhook URL (optional)", False),
 ]
 
@@ -2869,6 +2870,22 @@ def debate(ticker: str, period: str, level: str, no_persist: bool, source: str |
         console.print(f"\n[dim]Transcript saved to {debate_dir()}[/dim]")
 
 
+def _massive_source(chain: dict) -> str:
+    """The gex Data line for a Massive chain: freshness, as-of times, where spot came from, coverage."""
+
+    def at(when) -> str:
+        return when.astimezone(ET).strftime("%a %m-%d %H:%M ET") if when else "time unknown"
+
+    freshness = chain["freshness"] if chain["freshness"] != "unknown" else "delay not reported by the plan"
+    spot = "spot from the options snapshot"
+    if chain.get("spot_source") == "stock snapshot":
+        spot = f"spot {chain['current_price']:.2f} from the stock snapshot, {at(chain.get('spot_asof'))}"
+    return (
+        f"Massive ({freshness}; options as of {at(chain.get('asof'))}; {spot}; "
+        f"{chain['contracts']:,} contracts in {chain['pages']} pages)"
+    )
+
+
 @cli.command()
 @click.option("--ticker", default="SPY", help="Underlying symbol (default SPY).")
 @click.option(
@@ -2890,7 +2907,8 @@ def debate(ticker: str, period: str, level: str, no_persist: bool, source: str |
     type=click.Choice(["massive", "cboe"], case_sensitive=False),
     default="massive",
     show_default=True,
-    help="Option chain: Massive's options snapshot (POLYGON_API_KEY, an options plan), or CBOE (blocked, #55).",
+    help="Option chain: Massive's options snapshot (needs the Massive API key and an options plan), "
+    "or CBOE (blocked, #55).",
 )
 @click.option("--json", "as_json", is_flag=True, help="Emit raw JSON instead of markdown.")
 def gex(ticker: str, max_dte: int, rate: float, chain_source: str, as_json: bool):
@@ -2928,13 +2946,13 @@ def gex(ticker: str, max_dte: int, rate: float, chain_source: str, as_json: bool
             chain = client.option_chain(ticker, expiration_lte=now_et().date() + dt.timedelta(days=max_dte))
         except MassiveError as exc:
             if exc.status == "no-key":
-                hint = "set POLYGON_API_KEY (your Massive key) in .env"
+                hint = f"set {env_var('massive_api_key')} in .env"
             elif exc.status == 403:
                 hint = "Massive refused it (403): this key's plan doesn't include options chain snapshots"
             else:
                 hint = str(exc)
             raise click.ClickException(f"Option chain unavailable from Massive: {hint}") from exc
-        source = f"Massive ({chain['freshness']}, {chain['contracts']:,} contracts in {chain['pages']} pages)"
+        source = _massive_source(chain)
 
     try:
         result = compute_gex(chain, ticker=ticker, max_dte=max_dte, rate=rate)

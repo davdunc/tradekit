@@ -1,12 +1,14 @@
 """Settings and configuration management for tradekit."""
 
+import logging
 import os
+import warnings
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 from tradekit.paths import cache_dir as _default_cache_dir
@@ -84,27 +86,62 @@ def shared_env_path() -> Path:
 
 _ENV_FILES = _resolve_env_files()
 
+logger = logging.getLogger(__name__)
+
+#: Old environment variable names still read, per ``DataSettings`` field, oldest last (#58).
+#: The field's own name (upper-cased, e.g. ``MASSIVE_API_KEY``) always wins over these; an alias
+#: only fills a field that is otherwise empty, and warns once that it is deprecated. This table
+#: is the only place these names appear: no other module reads a vendor variable directly.
+ENV_ALIASES: dict[str, tuple[str, ...]] = {
+    "massive_api_key": ("POLYGON_API_KEY",),  # Polygon is Massive's old name
+    "backtest_access_key": ("MASSIVE_S3_ACCESS_KEY",),
+    "backtest_secret_key": ("MASSIVE_S3_SECRET_KEY",),
+}
+
+_warned_aliases: set[str] = set()
+
+
+def env_value(name: str) -> str:
+    """``name`` from the process environment, else from the .env chain, with pydantic's precedence.
+
+    The process environment wins; among files, a later one in ``env_file_candidates()`` wins over
+    an earlier one, as pydantic-settings resolves ``env_file`` lists. Used only for ``ENV_ALIASES``:
+    pydantic loads the canonical names itself, but ignores names that aren't fields, and loading a
+    .env into settings doesn't populate ``os.environ`` (the silent blank blotter of 2026-08).
+    """
+    if os.environ.get(name):
+        return os.environ[name]
+    for path in reversed(env_file_candidates()):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        except OSError:
+            continue
+        for line in reversed(lines):  # the last assignment in a file wins, as in a shell
+            key, sep, value = line.strip().removeprefix("export ").partition("=")
+            if sep and key.strip() == name:
+                value = value.strip().strip("'\"")
+                if value:
+                    return value
+    return ""
+
 
 class DataSettings(BaseSettings):
     model_config = {"env_file": _ENV_FILES, "env_file_encoding": "utf-8", "extra": "ignore"}
 
     alphavantage_api_key: str = ""
+    # Massive (formerly Polygon): one key for REST and the MCP server; POLYGON_API_KEY is a
+    # deprecated alias (ENV_ALIASES). The base URL is a public endpoint, so it may carry a default.
     massive_api_key: str = ""
+    massive_api_base: str = "https://api.massive.com"
     finviz_api_key: str = ""
     yahoo_cache_ttl_minutes: int = 5
     finviz_cache_ttl_minutes: int = 10
     cache_dir: Path = Field(default_factory=_default_cache_dir)
+    # Massive S3 flat files. MASSIVE_S3_ACCESS_KEY / MASSIVE_S3_SECRET_KEY are aliases (ENV_ALIASES).
     backtest_access_key: str = ""
     backtest_secret_key: str = ""
     backtest_bucket: str = "flatfiles"
     backtest_endpoint: str = "https://files.massive.com"
-    # Separate credential from `massive_api_key` (MCP path, used by MassiveProvider)
-    # and from `backtest_access_key`/`backtest_secret_key` (S3 flat files), despite
-    # being the same vendor (Massive IS Polygon — see docs/SPEC.md Known Gaps).
-    # Used for the direct REST aggs endpoint (api.polygon.io) by reports/blotter.py's
-    # same-day fallback and data/massive_rest.py (regime inputs). Consolidating these
-    # three schemes is tracked, not done here.
-    polygon_api_key: str = ""
     # Depth recorder sources (#9). IB Gateway: 4002 is the paper port, 4001 live; TWS 7497 / 7496.
     # Host and port take no default (SPEC "no fallback default", G12): a guessed port is refused,
     # and a refusal reads as "IBKR is down" while the Gateway runs fine on another port.
@@ -126,6 +163,36 @@ class DataSettings(BaseSettings):
     def _blank_port_is_unset(cls, value):
         """``IBKR_PORT=`` (as in .env.example) means unset, not a parse error for every command."""
         return None if isinstance(value, str) and not value.strip() else value
+
+    @model_validator(mode="after")
+    def _fill_from_deprecated_aliases(self):
+        """Fill an empty field from its old variable name (ENV_ALIASES), warning once per name."""
+        for field, aliases in ENV_ALIASES.items():
+            if getattr(self, field):
+                continue
+            for alias in aliases:
+                value = env_value(alias)
+                if not value:
+                    continue
+                setattr(self, field, value)
+                if alias not in _warned_aliases:
+                    _warned_aliases.add(alias)
+                    message = f"{alias} is deprecated: rename it to {env_var(field)} in .env"
+                    warnings.warn(message, DeprecationWarning, stacklevel=2)
+                    logger.warning(message)
+                break
+        return self
+
+
+def env_var(field: str) -> str:
+    """The environment variable a ``DataSettings`` field is read from (pydantic's default: upper case).
+
+    For code that has to *name* a variable (the ``init`` wizard writing .env, the MCP subprocess's
+    environment, an error message telling the user what to set), so the name is never retyped.
+    """
+    if field not in DataSettings.model_fields:
+        raise KeyError(f"DataSettings has no field {field!r}")
+    return field.upper()
 
 
 class ScreenerSettings(BaseSettings):

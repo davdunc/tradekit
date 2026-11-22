@@ -10,7 +10,7 @@ import pandas as pd
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from tradekit.config import get_settings
+from tradekit.config import env_var, get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -48,16 +48,17 @@ class MassiveProvider:
 
     def __init__(self):
         settings = get_settings()
-        self._api_key = settings.data.massive_api_key or os.environ.get("MASSIVE_API_KEY", "")
+        self._api_key = settings.data.massive_api_key  # resolved once in config (#58)
         self._package = settings.massive_mcp_package
         if not self._api_key:
-            raise ValueError("MASSIVE_API_KEY is required. Set it in .env or as an environment variable.")
+            raise ValueError(f"{env_var('massive_api_key')} is required. Set it in .env or as an environment variable.")
 
     def _server_params(self) -> StdioServerParameters:
         return StdioServerParameters(
             command="uvx",
             args=["--from", self._package, "mcp_massive"],
-            env={**os.environ, "MASSIVE_API_KEY": self._api_key},
+            # mcp_massive reads the same variable name tradekit's field maps to.
+            env={**os.environ, env_var("massive_api_key"): self._api_key},
         )
 
     async def _call_tool(self, tool_name: str, arguments: dict) -> dict:

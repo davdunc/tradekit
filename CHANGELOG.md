@@ -98,8 +98,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     followed only on Massive's own API hosts, so the key can't go anywhere else.
   - `--source massive|cboe` (default `massive`). The output's new **Data** line names the source
     and Massive's freshness (`delayed` or `real-time`).
-  - Needs `POLYGON_API_KEY` and an options plan that includes chain snapshots. A 403 says the
+  - Needs `MASSIVE_API_KEY` and an options plan that includes chain snapshots. A 403 says the
     plan doesn't, and is never retried. `--source cboe` explains the CBOE block (#55).
+  - Some plans return no underlying price or delay indicator in the options snapshot (seen live
+    2026-11-22). Spot then comes from Massive's stock snapshot, and the Data line gives the
+    options' and spot's as-of times instead of claiming `delayed` or `real-time`. Index
+    underlyings without a level are refused, not guessed.
+- **Massive settings are declared once, in `config.py`; Polygon names are deprecated** (#58).
+  - `DataSettings` owns `massive_api_key`, `massive_api_base` (default
+    `https://api.massive.com`) and the flat-file keys.
+  - `POLYGON_API_KEY` and `MASSIVE_S3_ACCESS_KEY` / `MASSIVE_S3_SECRET_KEY` are deprecated
+    aliases in `config.ENV_ALIASES`. They're resolved through the same `.env` chain and
+    precedence as pydantic, fill a field only when its own variable is unset, and warn once.
+  - The `polygon_api_key` setting and `blotter.py`'s private `.env` reader are gone. The REST
+    client, blotter, backtest and MCP providers, `init` wizard and `gex` messages read
+    settings or `config.env_var()`.
+  - `tests/test_config_massive.py` checks resolution against real `.env` files, and fails on
+    any Massive host or vendor variable name in a string literal outside `config.py` (it
+    flags 17 in `main`).
 
 - **`analysis/` does no I/O** (#49). The SPEC calls `analysis` pure computation, but three
   modules fetched market data themselves.
