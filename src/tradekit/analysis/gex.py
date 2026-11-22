@@ -10,8 +10,8 @@ sits upstream of setup selection rather than beside it:
 - **Zero-gamma flip** — the price at which that positioning changes sign.
 
 Data comes from CBOE's public delayed-quotes CDN: free, no API key, and it carries
-real open interest. yfinance was retired for this purpose on 2026-08-11 because its
-``openInterest`` returned 0 across every expiry. Gamma is computed with
+real open interest. It is fetched by :func:`tradekit.data.cboe.fetch_cboe_chain` and
+passed in: this module does no I/O (SPEC, #49). Gamma is computed with
 Black-Scholes-Merton against CBOE's own IV.
 
 .. note::
@@ -33,12 +33,10 @@ Black-Scholes-Merton against CBOE's own IV.
 from __future__ import annotations
 
 import datetime as dt
-import json
 import logging
 import math
-import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from tradekit.config import ET
 
@@ -63,15 +61,11 @@ DEFAULT_RATE = 0.03715
 #: percentile against a stored history is the better test once one exists.
 STRONG_REGIME_THRESHOLD = 100_000_000
 
-#: CBOE publishes cash index roots under an underscore prefix.
-CBOE_ROOT = {"SPX": "_SPX", "NDX": "_NDX", "RUT": "_RUT", "VIX": "_VIX"}
-CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{sym}.json"
-
 _SQRT_2PI = math.sqrt(2.0 * math.pi)
 
 
 class GEXError(RuntimeError):
-    """Raised when a chain cannot be fetched or carries no usable contracts."""
+    """Raised when a chain carries no usable spot price or contracts."""
 
 
 @dataclass
@@ -132,24 +126,6 @@ def parse_occ_symbol(sym: str) -> tuple[dt.date, str, float]:
     return exp, cp, strike
 
 
-def fetch_cboe_chain(ticker: str, timeout: int = 25) -> dict[str, Any]:
-    """Fetch the CBOE delayed-quotes payload for ``ticker``.
-
-    Returns the inner ``data`` object: ``{current_price, options: [...]}``.
-    """
-    sym = CBOE_ROOT.get(ticker.upper(), ticker.upper())
-    url = CBOE_URL.format(sym=sym)
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            payload = json.load(resp)
-    except Exception as exc:  # noqa: BLE001 — network, JSON and shape errors are one case here
-        raise GEXError(f"could not fetch CBOE chain for {ticker}: {exc}") from exc
-    if "data" not in payload:
-        raise GEXError(f"unexpected CBOE payload for {ticker}: no 'data' key")
-    return payload["data"]
-
-
 def classify_regime(total_net_gex: float) -> tuple[str, str]:
     """Map net GEX to a regime label and its tape-read implication."""
     if total_net_gex > STRONG_REGIME_THRESHOLD:
@@ -174,23 +150,24 @@ def classify_regime(total_net_gex: float) -> tuple[str, str]:
 
 
 def compute_gex(
+    chain: dict[str, Any],
+    *,
     ticker: str = "SPY",
     max_dte: int = 30,
     rate: float = DEFAULT_RATE,
-    *,
     now: dt.datetime | None = None,
-    fetch: Callable[[str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Compute a GEX snapshot for ``ticker``.
+    """Compute a GEX snapshot from an option chain.
 
     Args:
-        ticker: Underlying symbol. Cash index roots are mapped to CBOE's form.
+        chain: The CBOE delayed-quotes ``data`` object, ``{current_price, options: [...]}``,
+            as returned by :func:`tradekit.data.cboe.fetch_cboe_chain` or read from a saved
+            chain. This function does no I/O.
+        ticker: Underlying symbol, for the result and error messages.
         max_dte: Include expiries within this many days.
         rate: Risk-free rate used in d1.
         now: Evaluation time. Defaults to now in ET. Injectable so a snapshot can be
             recomputed deterministically against a stored chain.
-        fetch: Chain fetcher, for tests and for replaying a saved chain. Defaults to
-            :func:`fetch_cboe_chain`.
 
     Returns:
         A dict carrying spot, total net GEX, the regime label and implication, the
@@ -198,9 +175,11 @@ def compute_gex(
         coverage counts.
 
     Raises:
-        GEXError: if the chain cannot be fetched or holds no usable contracts.
+        GEXError: if the chain holds no usable spot price or contracts.
     """
-    data = (fetch or fetch_cboe_chain)(ticker)
+    if not isinstance(chain, dict):
+        raise TypeError(f"compute_gex takes the chain itself (a dict), not {type(chain).__name__}; fetch it first")
+    data = chain
     try:
         spot = float(data["current_price"])
     except (KeyError, TypeError, ValueError) as exc:

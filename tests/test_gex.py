@@ -18,13 +18,13 @@ from tradekit.analysis.gex import (
     bsm_gamma,
     classify_regime,
     compute_gex,
-    fetch_cboe_chain,
     format_markdown,
     parse_occ_symbol,
     to_dict,
     years_to_expiry,
 )
 from tradekit.config import ET
+from tradekit.data.cboe import CBOEError, fetch_cboe_chain
 
 SESSION = dt.datetime(2026, 9, 8, 10, 0, tzinfo=ET)  # mid-session, well before the close
 
@@ -38,6 +38,11 @@ def chain(contracts, spot: float = 100.0):
     """Return a fetch() stand-in yielding the given contracts."""
     options = [{"option": occ(exp, cp, strike), "open_interest": oi, "iv": iv} for exp, cp, strike, oi, iv in contracts]
     return lambda _ticker: {"current_price": spot, "options": options}
+
+
+def gex(ticker: str = "SPY", *, fetch, **kwargs):
+    """What the CLI does since #49: fetch the chain, then compute on it. Here without the network."""
+    return compute_gex(fetch(ticker), ticker=ticker, **kwargs)
 
 
 # --------------------------------------------------------------------------- math
@@ -142,7 +147,7 @@ def test_classify_regime_zero_is_not_positive():
 
 def test_compute_gex_aggregates_by_strike():
     exp = dt.date(2026, 9, 11)
-    result = compute_gex(
+    result = gex(
         "SPY",
         max_dte=30,
         now=SESSION,
@@ -165,7 +170,7 @@ def test_compute_gex_aggregates_by_strike():
 def test_puts_drive_net_negative():
     """Heavy put OI produces the negative-gamma regime."""
     exp = dt.date(2026, 9, 11)
-    result = compute_gex("SPY", now=SESSION, fetch=chain([(exp, "P", 100.0, 5_000_000, 0.20)]))
+    result = gex("SPY", now=SESSION, fetch=chain([(exp, "P", 100.0, 5_000_000, 0.20)]))
     assert result["total_net_gex"] < 0
     assert result["regime"].startswith("NEGATIVE")
 
@@ -173,20 +178,20 @@ def test_puts_drive_net_negative():
 def test_contracts_beyond_the_dte_horizon_are_excluded():
     near, far = dt.date(2026, 9, 11), dt.date(2026, 12, 18)
     fetch = chain([(near, "C", 100.0, 1_000, 0.20), (far, "C", 100.0, 1_000, 0.20)])
-    assert compute_gex("SPY", max_dte=7, now=SESSION, fetch=fetch)["contracts_scanned"] == 1
-    assert compute_gex("SPY", max_dte=180, now=SESSION, fetch=fetch)["contracts_scanned"] == 2
+    assert gex("SPY", max_dte=7, now=SESSION, fetch=fetch)["contracts_scanned"] == 1
+    assert gex("SPY", max_dte=180, now=SESSION, fetch=fetch)["contracts_scanned"] == 2
 
 
 @pytest.mark.parametrize("oi,iv", [(0, 0.20), (1_000, 0.0), (None, 0.20), (1_000, None)])
 def test_contracts_without_oi_or_iv_are_skipped(oi, iv):
     exp = dt.date(2026, 9, 11)
     fetch = chain([(exp, "C", 100.0, oi, iv), (exp, "C", 105.0, 1_000, 0.20)])
-    assert compute_gex("SPY", now=SESSION, fetch=fetch)["contracts_scanned"] == 1
+    assert gex("SPY", now=SESSION, fetch=fetch)["contracts_scanned"] == 1
 
 
 def test_zero_dte_bucket_is_reported_separately():
     today, later = SESSION.date(), dt.date(2026, 10, 2)  # both inside the 30-day horizon
-    result = compute_gex(
+    result = gex(
         "SPY",
         now=SESSION,
         fetch=chain([(today, "C", 100.0, 2_000, 0.20), (later, "C", 100.0, 2_000, 0.20)]),
@@ -202,7 +207,7 @@ def test_zero_dte_bucket_is_reported_separately():
 def test_empty_chain_raises_gex_error_not_systemexit():
     """A library must not kill the process — the old tool called SystemExit here."""
     with pytest.raises(GEXError):
-        compute_gex("SPY", now=SESSION, fetch=chain([]))
+        gex("SPY", now=SESSION, fetch=chain([]))
 
 
 def test_malformed_symbols_are_ignored():
@@ -215,22 +220,22 @@ def test_malformed_symbols_are_ignored():
             {"option": occ(exp, "C", 100.0), "open_interest": 1_000, "iv": 0.20},
         ],
     }
-    assert compute_gex("SPY", now=SESSION, fetch=fetch)["contracts_scanned"] == 1
+    assert gex("SPY", now=SESSION, fetch=fetch)["contracts_scanned"] == 1
 
 
 def test_missing_spot_raises():
     with pytest.raises(GEXError):
-        compute_gex("SPY", now=SESSION, fetch=lambda _t: {"options": []})
+        gex("SPY", now=SESSION, fetch=lambda _t: {"options": []})
 
 
-def test_network_failure_is_wrapped_as_gex_error(monkeypatch):
-    """Transport errors surface as GEXError, so the CLI can report them cleanly."""
+def test_network_failure_is_wrapped_as_cboe_error(monkeypatch):
+    """Transport errors surface as CBOEError, so the CLI can report them cleanly."""
 
     def boom(*_args, **_kwargs):
         raise OSError("connection reset")
 
-    monkeypatch.setattr("tradekit.analysis.gex.urllib.request.urlopen", boom)
-    with pytest.raises(GEXError, match="could not fetch"):
+    monkeypatch.setattr("tradekit.data.cboe.urllib.request.urlopen", boom)
+    with pytest.raises(CBOEError, match="could not fetch"):
         fetch_cboe_chain("SPY")
 
 
@@ -245,8 +250,8 @@ def test_payload_without_data_key_is_wrapped(monkeypatch):
         def read(self):
             return b'{"unexpected": true}'
 
-    monkeypatch.setattr("tradekit.analysis.gex.urllib.request.urlopen", lambda *_a, **_k: FakeResponse())
-    with pytest.raises(GEXError, match="no 'data' key"):
+    monkeypatch.setattr("tradekit.data.cboe.urllib.request.urlopen", lambda *_a, **_k: FakeResponse())
+    with pytest.raises(CBOEError, match="no 'data' key"):
         fetch_cboe_chain("SPY")
 
 
@@ -255,7 +260,7 @@ def test_payload_without_data_key_is_wrapped(monkeypatch):
 
 def test_format_markdown_shape():
     exp = dt.date(2026, 9, 11)
-    result = compute_gex("SPY", now=SESSION, fetch=chain([(exp, "P", 100.0, 5_000_000, 0.20)]))
+    result = gex("SPY", now=SESSION, fetch=chain([(exp, "P", 100.0, 5_000_000, 0.20)]))
     md = format_markdown(result)
     assert md.startswith("### 🌐 GEX Snapshot — SPY")
     assert "| Strike | Call GEX ($M) | Put GEX ($M) | Net ($M) |" in md
@@ -267,7 +272,7 @@ def test_to_dict_is_json_serialisable():
     import json
 
     exp = dt.date(2026, 9, 11)
-    result = compute_gex("SPY", now=SESSION, fetch=chain([(exp, "C", 100.0, 1_000, 0.20)]))
+    result = gex("SPY", now=SESSION, fetch=chain([(exp, "C", 100.0, 1_000, 0.20)]))
     payload = json.loads(json.dumps(to_dict(result), default=str))
     assert payload["ticker"] == "SPY"
     assert isinstance(payload["top5_strikes"], list)
@@ -276,11 +281,33 @@ def test_to_dict_is_json_serialisable():
 
 def test_zero_dte_clause_omitted_when_there_is_no_zero_dte():
     """After the close there is no 0DTE slice — say nothing rather than '0%'."""
-    result = compute_gex("SPY", now=SESSION, fetch=chain([(dt.date(2026, 9, 25), "C", 100.0, 1_000, 0.20)]))
+    result = gex("SPY", now=SESSION, fetch=chain([(dt.date(2026, 9, 25), "C", 100.0, 1_000, 0.20)]))
     assert result["zero_dte_gex"] == 0.0
     assert "0DTE" not in format_markdown(result)
 
 
 def test_zero_dte_clause_present_when_it_contributes():
-    result = compute_gex("SPY", now=SESSION, fetch=chain([(SESSION.date(), "C", 100.0, 1_000, 0.20)]))
+    result = gex("SPY", now=SESSION, fetch=chain([(SESSION.date(), "C", 100.0, 1_000, 0.20)]))
     assert "0DTE" in format_markdown(result)
+
+
+# --------------------------------------------------------------------------- purity (#49)
+
+
+def test_compute_gex_takes_the_chain_and_does_no_io(monkeypatch):
+    """A plain dict in, a result out: the network is never touched."""
+
+    def no_network(*_a, **_k):
+        raise AssertionError("compute_gex must not fetch")
+
+    monkeypatch.setattr("tradekit.data.cboe.urllib.request.urlopen", no_network)
+    exp = dt.date(2026, 9, 11)
+    data = chain([(exp, "C", 100.0, 1_000, 0.20)])("SPY")
+    result = compute_gex(data, ticker="SPY", now=SESSION)
+    assert result["contracts_scanned"] == 1 and result["spot"] == 100.0
+
+
+def test_compute_gex_rejects_a_ticker_where_the_chain_belongs():
+    """The pre-#49 call shape, compute_gex("SPY", 30, rate), fails loudly instead of half-working."""
+    with pytest.raises(TypeError, match="takes the chain itself"):
+        compute_gex("SPY", now=SESSION)

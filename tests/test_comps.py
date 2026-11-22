@@ -1,6 +1,7 @@
 """Tests for the sector & overnight comps analysis (offline, fake provider)."""
 
 import datetime as dt
+from types import SimpleNamespace
 
 import pytest
 
@@ -8,8 +9,10 @@ from tradekit.analysis.comps import (
     COUNTER_TREND_COUNT,
     ET,
     build_comps_report,
+    comps_symbols,
     last_us_close,
 )
+from tradekit.data.batch import fetch_each
 
 
 class FakeProvider:
@@ -42,8 +45,19 @@ class FakeProvider:
         raise NotImplementedError
 
 
+def fetch_report(provider, ticker, sector=None, *, now=None):
+    """What the CLI does since #49: fetch the symbols comps needs, then build from them."""
+    needed = comps_symbols(ticker, sector)
+    if needed is None:
+        return None
+    quote_symbols, premarket_symbols = needed
+    quotes = fetch_each(provider.get_quote, quote_symbols)
+    premarket = fetch_each(provider.get_premarket, premarket_symbols)
+    return build_comps_report(ticker, quotes, premarket, sector, now=now)
+
+
 def test_mu_memory_scenario_forces_counter_trend_for_long():
-    report = build_comps_report(FakeProvider(), "MU")
+    report = fetch_report(FakeProvider(), "MU")
     assert report is not None
     assert report.sector == "memory"
     names = [s.name for s in report.signals]
@@ -59,24 +73,24 @@ def test_mu_memory_scenario_forces_counter_trend_for_long():
 
 
 def test_inverse_etf_sign_is_flipped():
-    report = build_comps_report(FakeProvider(), "MU")
+    report = fetch_report(FakeProvider(), "MU")
     tell = next(s for s in report.signals if "SOXS" in s.name)
     assert tell.move_pct == -4.9  # +4.9% inverse ETF reads as -4.9% sector
     assert tell.bearish is True
 
 
 def test_unknown_ticker_returns_none_without_sector_override():
-    assert build_comps_report(FakeProvider(), "ZZZZ") is None
+    assert fetch_report(FakeProvider(), "ZZZZ") is None
 
 
 def test_sector_override_maps_unknown_ticker():
-    report = build_comps_report(FakeProvider(), "ZZZZ", sector="memory")
+    report = fetch_report(FakeProvider(), "ZZZZ", sector="memory")
     assert report is not None
     assert report.sector == "memory"
 
 
 def test_flat_sector_only_trips_index_skew():
-    report = build_comps_report(FakeProvider(), "COIN")
+    report = fetch_report(FakeProvider(), "COIN")
     assert report is not None
     # COIN's own sector signals are flat/absent; the only bearish read is
     # the QQQ-led index skew (-0.59% with |QQQ-SPY| >= 0.25).
@@ -92,7 +106,7 @@ def test_missing_data_is_no_read_not_aligned():
         QUOTES = {}
         PREMARKET = {}
 
-    report = build_comps_report(EmptyProvider(), "MU")
+    report = fetch_report(EmptyProvider(), "MU")
     assert report is not None
     assert report.bearish_count == 0
     assert report.bullish_count == 0
@@ -120,13 +134,16 @@ def test_unknown_explicit_sector_raises_instead_of_reading_as_unmapped():
     from tradekit.analysis.comps import build_comps_report
 
     with pytest.raises(ValueError, match="unknown sector 'memroy'; choose from china, crypto, memory, semis"):
-        build_comps_report(None, "MU", sector="memroy")
+        build_comps_report("MU", {}, {}, sector="memroy")
+    with pytest.raises(ValueError, match="unknown sector 'memroy'"):
+        comps_symbols("MU", sector="memroy")
 
 
 def test_unmapped_ticker_without_a_sector_still_returns_none():
     from tradekit.analysis.comps import build_comps_report
 
-    assert build_comps_report(None, "ZZZZ") is None
+    assert build_comps_report("ZZZZ", {}, {}) is None
+    assert comps_symbols("ZZZZ") is None
 
 
 def test_cli_rejects_an_unknown_sector_before_fetching_anything(monkeypatch):
@@ -150,8 +167,9 @@ def test_cli_sector_is_case_insensitive(monkeypatch):
     from tradekit.analysis import comps as comps_mod
 
     seen = {}
-    monkeypatch.setattr(cli_mod, "get_provider", lambda source: object())
-    monkeypatch.setattr(comps_mod, "build_comps_report", lambda p, t, sector=None: seen.setdefault("sector", sector))
+    empty = SimpleNamespace(get_quote=lambda s: {}, get_premarket=lambda s: {})
+    monkeypatch.setattr(cli_mod, "get_provider", lambda source: empty)
+    monkeypatch.setattr(comps_mod, "build_comps_report", lambda t, q, p, sector=None: seen.setdefault("sector", sector))
     result = CliRunner().invoke(cli_mod.cli, ["comps", "MU", "--sector", "MEMORY"])
     assert seen["sector"] == "MEMORY", result.output
 
@@ -195,7 +213,7 @@ def closed_market(asia_time):
 
 
 def test_no_premarket_session_is_unavailable_not_zero():
-    report = build_comps_report(closed_market(MON_0130), "MU", now=MON_0330)
+    report = fetch_report(closed_market(MON_0130), "MU", now=MON_0330)
     premarket = [s for s in report.signals if "overnight" not in s.name]
     assert [s.name for s in premarket] == ["SOXX premarket", "SOXS tell (sign flipped)", "Index skew (QQQ-led)"]
     assert all(s.move_pct is None and s.note == "no premarket session" for s in premarket)
@@ -203,7 +221,7 @@ def test_no_premarket_session_is_unavailable_not_zero():
 
 def test_before_premarket_the_verdict_says_counter_trend_cannot_be_ruled_out():
     """Monday 03:30 ET: two live bearish Asia comps, three unavailable: the issue's example."""
-    report = build_comps_report(closed_market(MON_0130), "MU", now=MON_0330)
+    report = fetch_report(closed_market(MON_0130), "MU", now=MON_0330)
     assert report.bearish_count == 2 and report.missing == 3
     assert report.verdict("long") == (
         "CAUTION: 2 signal(s) against long (3 of 5 signals unavailable or stale)"
@@ -212,7 +230,7 @@ def test_before_premarket_the_verdict_says_counter_trend_cannot_be_ruled_out():
 
 
 def test_weekend_overnight_comps_are_stale_and_not_counted():
-    report = build_comps_report(closed_market(FRI_0100), "MU", now=SAT)
+    report = fetch_report(closed_market(FRI_0100), "MU", now=SAT)
     samsung = report.signals[0]
     assert samsung.stale and samsung.move_pct == pytest.approx(-7.0)
     assert samsung.note == "stale: Fri 11-20 01:00 ET, before the last US close (Fri 11-20)"
@@ -221,14 +239,14 @@ def test_weekend_overnight_comps_are_stale_and_not_counted():
 
 
 def test_fresh_overnight_comp_is_counted_and_stamped():
-    report = build_comps_report(closed_market(MON_0130), "MU", now=MON_0330)
+    report = fetch_report(closed_market(MON_0130), "MU", now=MON_0330)
     samsung = report.signals[0]
     assert samsung.live and samsung.bearish is True
     assert samsung.note == "Mon 11-23 01:30 ET"
 
 
 def test_quote_without_a_market_time_counts_but_says_so():
-    report = build_comps_report(FakeProvider(), "MU", now=MON_0330)
+    report = fetch_report(FakeProvider(), "MU", now=MON_0330)
     assert report.signals[0].note == "session time unknown"
     assert report.signals[0].live
 
@@ -239,7 +257,7 @@ def test_unavailable_signals_do_not_hide_a_counter_trend_call():
     class OneMissing(FakeProvider):
         PREMARKET = {**FakeProvider.PREMARKET, "SPY": {"gap_pct": None}}
 
-    report = build_comps_report(OneMissing(), "MU", now=MON_0330)
+    report = fetch_report(OneMissing(), "MU", now=MON_0330)
     verdict = report.verdict("long")
     assert verdict.startswith("COUNTER-TREND: 4 signals against long")
     assert verdict.endswith("(1 of 5 signals unavailable or stale)")
@@ -250,7 +268,7 @@ def test_aligned_verdict_also_flags_hidden_counter_trend():
         QUOTES = {"005930.KS": {"price": 100.0, "prev_close": 100.0}}
         PREMARKET = {"SOXX": {"gap_pct": 0.1}}
 
-    report = build_comps_report(Quiet(), "MU", now=MON_0330)
+    report = fetch_report(Quiet(), "MU", now=MON_0330)
     # 5 signals: Samsung and SOXX are live (both flat). Missing: SK Hynix (no quote), the SOXS
     # tell (no premarket), and the index skew, one signal built from QQQ *and* SPY. So 3.
     assert report.missing == 3
@@ -278,7 +296,7 @@ def test_cli_shows_stale_and_unavailable_rows(monkeypatch):
 
     real = comps_mod.build_comps_report
     monkeypatch.setattr(cli_mod, "get_provider", lambda source: closed_market(FRI_0100))
-    monkeypatch.setattr(comps_mod, "build_comps_report", lambda p, t, sector=None: real(p, t, sector, now=SAT))
+    monkeypatch.setattr(comps_mod, "build_comps_report", lambda t, q, p, sector=None: real(t, q, p, sector, now=SAT))
     result = CliRunner().invoke(cli_mod.cli, ["comps", "MU"])
     plain = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
     out = " ".join(re.sub(r"[│┃┏┓┗┛┡┩└┘├┤┼━─╇┳╋┻┬┴]", " ", plain).split())  # rejoin wrapped cells
@@ -286,3 +304,66 @@ def test_cli_shows_stale_and_unavailable_rows(monkeypatch):
     assert "Samsung overnight -7.00% stale 005930.KS · stale: Fri 11-20 01:00 ET, before the last US close" in out
     assert "SOXX premarket - n/a sector ETF · no premarket session" in out
     assert "NO READ" in out and "+0.00%" not in out
+
+
+# ----- #49: comps does no I/O; the CLI fetches each shared symbol once -----
+
+
+def test_build_comps_report_works_on_plain_dicts_without_a_provider():
+    quotes = {"005930.KS": {"price": 91.0, "prev_close": 100.0}, "000660.KS": {"price": 96.0, "prev_close": 100.0}}
+    premarket = {
+        "SOXX": {"has_premarket": True, "gap_pct": -1.6},
+        "SOXS": {"has_premarket": True, "gap_pct": 4.9},
+        "QQQ": {"has_premarket": True, "gap_pct": -0.59},
+        "SPY": {"has_premarket": True, "gap_pct": -0.15},
+    }
+    report = build_comps_report("MU", quotes, premarket, now=MON_0330)
+    assert report.verdict("long").startswith("COUNTER-TREND")
+
+
+def test_comps_symbols_lists_what_to_fetch():
+    assert comps_symbols("MU") == (["005930.KS", "000660.KS"], ["SOXX", "SOXS", "QQQ", "SPY"])
+
+
+def test_a_failed_request_is_reported_not_raised():
+    premarket = {"SOXX": {"error": "TimeoutError: read timed out"}}
+    report = build_comps_report("MU", {}, premarket, now=MON_0330)
+    soxx = next(s for s in report.signals if s.name == "SOXX premarket")
+    assert soxx.move_pct is None and soxx.note == "premarket request failed"
+
+
+def test_fetch_each_records_failures_and_skips_symbols_already_fetched():
+    calls = []
+
+    def fetch(symbol):
+        calls.append(symbol)
+        if symbol == "BAD":
+            raise TimeoutError("read timed out")
+        return {"price": 1.0}
+
+    out = fetch_each(fetch, ["QQQ", "BAD", "QQQ"])
+    assert out["BAD"] == {"error": "TimeoutError: read timed out"}
+    fetch_each(fetch, ["QQQ", "SPY"], into=out)
+    assert calls == ["QQQ", "BAD", "SPY"]  # QQQ fetched once, even across calls
+
+
+def test_cli_fetches_shared_symbols_once_across_tickers(monkeypatch):
+    from click.testing import CliRunner
+
+    from tradekit import cli as cli_mod
+
+    calls = []
+
+    class Counting(FakeProvider):
+        def get_quote(self, ticker):
+            calls.append(("quote", ticker))
+            return super().get_quote(ticker)
+
+        def get_premarket(self, ticker):
+            calls.append(("premarket", ticker))
+            return super().get_premarket(ticker)
+
+    monkeypatch.setattr(cli_mod, "get_provider", lambda source: Counting())
+    result = CliRunner().invoke(cli_mod.cli, ["comps", "MU", "WDC", "SNDK"])
+    assert result.exit_code == 0, result.output
+    assert len(calls) == len(set(calls)) == 6  # 2 Asia comps + SOXX, SOXS, QQQ, SPY, each once

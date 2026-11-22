@@ -59,7 +59,7 @@ AMZN = _chain({D(2026, 10, 28): 3.95, D(2026, 10, 30): 19.23})
 def chain(monkeypatch):
     """Serve a synthetic CBOE chain; returns a setter for other chains."""
     holder = {"data": AMZN}
-    monkeypatch.setattr("tradekit.analysis.earnings.fetch_cboe_chain", lambda t: holder["data"])
+    monkeypatch.setattr("tradekit.data.cboe.fetch_cboe_chain", lambda t: holder["data"])
     return lambda data: holder.update(data=data)
 
 

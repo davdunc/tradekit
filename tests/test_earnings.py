@@ -30,7 +30,7 @@ AMZN = _chain(254.0, {D(2026, 10, 28): 3.95, D(2026, 10, 30): 19.23, D(2026, 11,
 
 
 def test_amc_skips_the_0dte_expiry_and_prices_friday():
-    r = implied_move("AMZN", D(2026, 10, 29), "AMC", fetch=lambda t: AMZN)
+    r = implied_move(AMZN, ticker="AMZN", event_date=D(2026, 10, 29), timing="AMC")
     assert r["event_expiry"] == "2026-10-30"
     assert r["expiry_quality"] == "event"
     assert r["implied_move_pct"] == pytest.approx(7.57, abs=0.01)
@@ -55,7 +55,10 @@ def test_unknown_timing_is_treated_as_amc():
 
 def test_only_expiries_before_the_event_is_unusable():
     r = implied_move(
-        "AMZN", D(2026, 10, 29), "AMC", fetch=lambda t: _chain(254.0, {D(2026, 10, 27): 3.0, D(2026, 10, 28): 3.95})
+        _chain(254.0, {D(2026, 10, 27): 3.0, D(2026, 10, 28): 3.95}),
+        ticker="AMZN",
+        event_date=D(2026, 10, 29),
+        timing="AMC",
     )
     assert r["event_expiry"] is None
     assert r["expiry_quality"] == "unusable"
@@ -77,7 +80,7 @@ def test_unpriced_atm_straddle_is_unusable():
         "current_price": 254.0,
         "options": [{"option": _occ("AMZN", D(2026, 10, 30), "C", 255.0), "bid": 9.5, "ask": 9.7}],  # no put leg
     }
-    r = implied_move("AMZN", D(2026, 10, 29), "AMC", fetch=lambda t: chain)
+    r = implied_move(chain, ticker="AMZN", event_date=D(2026, 10, 29), timing="AMC")
     assert r["event_expiry"] == "2026-10-30"
     assert (r["expiry_quality"], r["implied_move_pct"]) == ("unusable", None)
 
@@ -89,3 +92,11 @@ def test_straddle_uses_last_trade_when_unquoted():
         {"option": _occ("AMZN", exp, "P", 255.0), "bid": 9.9, "ask": 10.1},
     ]
     assert atm_straddle(options, exp, 254.0) == (255.0, pytest.approx(19.0))
+
+
+def test_implied_move_rejects_a_ticker_where_the_chain_belongs():
+    """The pre-#49 call shape, implied_move("AMZN", date, "AMC"), fails loudly (#49)."""
+    import pytest
+
+    with pytest.raises(TypeError, match="takes the chain itself"):
+        implied_move("AMZN", ticker="AMZN", event_date=D(2026, 10, 29), timing="AMC")

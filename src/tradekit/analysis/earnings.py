@@ -27,11 +27,11 @@ Expiry rules (design spec §6, expiry hygiene):
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from tradekit.analysis.gex import fetch_cboe_chain, parse_occ_symbol
+from tradekit.analysis.gex import parse_occ_symbol
 
 Timing = Literal["BMO", "AMC", "unknown"]
 
@@ -113,22 +113,22 @@ def atm_straddle(options: Iterable[dict[str, Any]], expiry: dt.date, spot: float
 
 
 def implied_move(
+    chain: dict[str, Any],
+    *,
     ticker: str,
     event_date: dt.date,
     timing: Timing,
-    *,
-    fetch: Callable[[str], dict[str, Any]] | None = None,
     event_window_days: int = EVENT_WINDOW_DAYS,
     max_days: int = MAX_DAYS,
 ) -> dict[str, Any]:
     """Implied earnings move for ``ticker``, priced on the event expiry.
 
     Args:
+        chain: The CBOE delayed-quotes ``data`` object, ``{current_price, options: [...]}``,
+            as returned by :func:`tradekit.data.cboe.fetch_cboe_chain`. No I/O here (#49).
         ticker: Underlying symbol.
         event_date: Earnings release date.
         timing: ``"BMO"``, ``"AMC"`` or ``"unknown"``.
-        fetch: Chain fetcher, for tests and replaying a saved chain. Defaults to the CBOE
-            delayed-quotes chain (:func:`tradekit.analysis.gex.fetch_cboe_chain`).
 
     Returns:
         A dict with ``event_expiry``, ``expiry_quality``, ``days_after_event``, ``spot``,
@@ -136,7 +136,9 @@ def implied_move(
         it has no priced at-the-money straddle, ``implied_move_pct`` is ``None`` and
         ``expiry_quality`` is ``"unusable"``.
     """
-    data = (fetch or fetch_cboe_chain)(ticker)
+    if not isinstance(chain, dict):
+        raise TypeError(f"implied_move takes the chain itself (a dict), not {type(chain).__name__}; fetch it first")
+    data = chain
     spot = float(data["current_price"])
     options = data.get("options", [])
 
