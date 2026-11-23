@@ -9,7 +9,7 @@ import click
 from rich.console import Console
 
 from tradekit.analysis.gex import DEFAULT_RATE as GEX_DEFAULT_RATE
-from tradekit.config import ET, env_var, get_settings, now_et, shared_env_path
+from tradekit.config import ET, LEGACY_PAI_DIR, env_var, get_settings, legacy_pai_dir, now_et, shared_env_path
 from tradekit.data.finviz_http import FinvizThrottled, FinvizUnavailable
 from tradekit.errors import EnrichmentError
 from tradekit.paths import data_dir as tradekit_data_dir
@@ -1955,7 +1955,7 @@ def _upsert_env_file(path: Path, updates: dict[str, str]) -> None:
     "--env-file",
     type=click.Path(dir_okay=False, path_type=Path),
     default=None,
-    help="Target .env file (defaults to PAI-aware auto-detect).",
+    help="Target .env file (defaults to LifeOS's shared ~/.claude/.env).",
 )
 @click.option(
     "--non-interactive",
@@ -1965,10 +1965,10 @@ def _upsert_env_file(path: Path, updates: dict[str, str]) -> None:
 def init(env_file: Path | None, non_interactive: bool):
     """Interactive setup wizard — populate the shared .env with API keys.
 
-    Detects your PAI environment and writes to the appropriate shared .env:
-      1. $PAI_DIR/.env  (if PAI_DIR is set)
-      2. ~/.claude/.env (if that directory exists)
-      3. ./.env         (fallback, standalone mode)
+    Writes to the shared .env that LifeOS and Claude Code use:
+      1. ~/.claude/.env (if that directory exists)
+      2. ./.env         (fallback, standalone mode)
+    A deprecated PAI_DIR, while still set, takes precedence (its .env is read last).
 
     Missing keys are prompted interactively. Existing keys are preserved
     unless you choose to overwrite them.
@@ -1979,17 +1979,16 @@ def init(env_file: Path | None, non_interactive: bool):
     console.print("[bold]tradekit init[/bold]")
     console.print(f"  Target .env: [cyan]{target}[/cyan]")
 
-    pai_dir = os.environ.get("PAI_DIR")
+    pai_dir = legacy_pai_dir()
     if pai_dir:
-        expanded = Path(os.path.expandvars(pai_dir)).expanduser()
-        if str(expanded) != pai_dir:
-            console.print(f"  Detected PAI_DIR: [green]{pai_dir}[/green] → [cyan]{expanded}[/cyan]")
-        else:
-            console.print(f"  Detected PAI_DIR: [green]{pai_dir}[/green]")
+        console.print(
+            f"  [yellow]{LEGACY_PAI_DIR} is set ({pai_dir}): deprecated, PAI is now LifeOS. "
+            f"Move keys to ~/.claude/.env and unset it.[/yellow]"
+        )
     elif (Path.home() / ".claude").exists():
-        console.print("  Detected Claude Code directory: [green]~/.claude[/green]")
+        console.print("  Detected Claude Code / LifeOS directory: [green]~/.claude[/green]")
     else:
-        console.print("  [yellow]No PAI or Claude Code install detected — standalone mode[/yellow]")
+        console.print("  [yellow]No LifeOS or Claude Code install detected — standalone mode[/yellow]")
 
     current = _read_env_file(target)
     console.print("\n[bold]Current values[/bold] (masked):")

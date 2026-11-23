@@ -10,7 +10,7 @@
 `tradekit` is a Python CLI that provides the analytical backbone for an SMB
 Capital–style intraday trading workflow: pre-market scans, support/resistance
 levels, indicator-based scoring, and news retrieval. It can be used standalone
-or as the data engine for a [LifeOS][pai] pack (formerly Personal AI Infrastructure / PAI).
+or as the data engine for a [LifeOS][lifeos] pack (formerly Personal AI Infrastructure / PAI).
 
 ---
 
@@ -79,7 +79,7 @@ automatically, but Windows-style path *arguments* are not: pass `--out` relative
 
 ### Inside a LifeOS install
 
-If you're running [LifeOS][pai] (formerly PAI), install tradekit and
+If you're running [LifeOS][lifeos] (formerly PAI), install tradekit and
 let it auto-detect the shared environment:
 
 ```bash
@@ -87,7 +87,7 @@ uv tool install git+https://github.com/davdunc/tradekit
 tradekit init
 ```
 
-`tradekit init` will detect your LifeOS directory (`$PAI_DIR` or `~/.claude/.env`),
+`tradekit init` will find LifeOS's shared `.env` (`~/.claude/.env`),
 prompt for any missing API keys, and write them to the shared `.env` so every
 LifeOS pack picks them up. It also offers to write the account mapping
 (see [Account mapping](#account-mapping)).
@@ -149,12 +149,15 @@ the keys you need. Minimum viable setup uses only Yahoo data, which requires
 no API key. Add Finviz, Alpha Vantage, or Massive keys to unlock additional
 data sources and news.
 
-Environment files are loaded in this precedence order (last wins):
+Settings are resolved in this order (later wins):
 
-1. System environment variables
-2. `$PAI_DIR/.env` — LifeOS ecosystem shared config
-3. `~/.claude/.env` — Claude Code default
-4. `./.env` — project-local
+1. `./.env` — project-local
+2. `~/.claude/.env` — LifeOS's shared `.env` (also the Claude Code default)
+3. `$PAI_DIR/.env` — **deprecated**, read only while `PAI_DIR` is set. PAI is now LifeOS, which
+   keeps the shared `.env` at `~/.claude/.env`; tradekit warns once when `PAI_DIR` is set.
+4. System environment variables
+
+So a key in the shared `.env` overrides the same key in a project-local one.
 
 See [`.env.example`](.env.example) for the full variable list.
 
@@ -286,7 +289,7 @@ request. Set `IBKR_DEPTH_LIMIT` to what your account accepts.
 
 ## Integration with LifeOS
 
-`tradekit` is designed to slot into [Daniel Miessler's LifeOS ecosystem][pai] as
+`tradekit` is designed to slot into [Daniel Miessler's LifeOS ecosystem][lifeos] as
 the CLI backbone of a trading skill pack. The companion pack (Trading skill)
 provides the conversational workflows — MorningPrep, TradeSetup, SessionReview,
 WeeklyReview — and shells out to `tradekit` for market data, scans, and
@@ -295,7 +298,7 @@ analysis.
 **How LifeOS integration works:**
 
 - `tradekit` reads from the **same shared `.env`** as every other LifeOS pack
-  (`$PAI_DIR/.env`), so API keys are configured once
+  (`~/.claude/.env`), so API keys are configured once
 - The **Trading skill** routes natural-language requests (`"morning prep"`,
   `"analyze NVDA"`, `"show levels for SPY"`) to the appropriate `tradekit`
   subcommand
@@ -348,7 +351,7 @@ for a review with an `@claude` comment instead.
 
 ## Acknowledgments
 
-This project is built to integrate with [Daniel Miessler's LifeOS][pai] (formerly
+This project is built to integrate with [Daniel Miessler's LifeOS][lifeos] (formerly
 Personal AI Infrastructure / PAI) and follows the conventions established there —
 shared `.env` configuration, wizard-style installation, and pack-based composition.
 Thanks to Daniel and the LifeOS community for the foundation.
@@ -356,7 +359,7 @@ Thanks to Daniel and the LifeOS community for the foundation.
 Trading methodology draws on [SMB Capital][smb]'s published playbook material
 (Bellafiore, Spencer).
 
-[pai]: https://github.com/danielmiessler/LifeOS
+[lifeos]: https://github.com/danielmiessler/LifeOS
 [smb]: https://www.smbtraining.com/
 [uv]: https://github.com/astral-sh/uv
 [claude-action]: https://github.com/anthropics/claude-code-action

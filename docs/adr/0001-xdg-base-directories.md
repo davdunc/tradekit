@@ -29,7 +29,7 @@ Relocating either unilaterally breaks the suite.
 
 **Resolve all paths through a single module, `tradekit.paths`.** No other module
 constructs a path from `Path.home()`. The exception is `~/.claude/...`, which
-belongs to PAI and is not ours to place.
+belongs to LifeOS (formerly PAI) and is not ours to place.
 
 **Follow the XDG Base Directory specification.** Note that `~/.local/<app>` is
 *not* an XDG location — only `share`, `state`, `bin`, and `lib` live directly

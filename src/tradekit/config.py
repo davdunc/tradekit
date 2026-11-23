@@ -34,12 +34,44 @@ def _project_root() -> Path:
 PROJECT_ROOT = _project_root()
 
 
+#: LifeOS (formerly PAI, Personal AI Infrastructure) renamed PAI_DIR to LIFEOS_DIR (#5). The two
+#: don't mean the same directory: PAI_DIR was the Claude home holding the shared .env, while
+#: LIFEOS_DIR is LifeOS's data and tools directory (default ~/.claude/LIFEOS). LifeOS keeps its
+#: shared .env at ~/.claude/.env, which this chain always reads, so PAI_DIR is honoured only as a
+#: deprecated fallback for installs that still set it.
+LEGACY_PAI_DIR = "PAI_DIR"
+LIFEOS_DIR = "LIFEOS_DIR"
+_warned_legacy: set[str] = set()
+
+
+def legacy_pai_dir() -> Path | None:
+    """``$PAI_DIR`` expanded, warning once that it is deprecated; None when unset."""
+    raw = os.environ.get(LEGACY_PAI_DIR)
+    if not raw:
+        return None
+    if LEGACY_PAI_DIR not in _warned_legacy:
+        _warned_legacy.add(LEGACY_PAI_DIR)
+        message = (
+            f"{LEGACY_PAI_DIR} is deprecated: PAI is now LifeOS, which keeps the shared .env at "
+            f"~/.claude/.env. Move any keys there and unset {LEGACY_PAI_DIR}."
+        )
+        warnings.warn(message, DeprecationWarning, stacklevel=2)
+        logging.getLogger(__name__).warning(message)
+    return Path(os.path.expandvars(raw)).expanduser()
+
+
+def lifeos_dir() -> Path:
+    """LifeOS's data and tools directory: ``$LIFEOS_DIR``, else ``~/.claude/LIFEOS`` (its default)."""
+    raw = os.environ.get(LIFEOS_DIR)
+    return Path(os.path.expandvars(raw)).expanduser() if raw else Path.home() / ".claude" / "LIFEOS"
+
+
 def env_file_candidates() -> list[Path]:
     """Build the .env load chain, in precedence order (lowest → highest).
 
         1. ./.env                 — project-local standalone
-        2. ~/.claude/.env         — Claude Code default
-        3. $PAI_DIR/.env          — PAI ecosystem shared config
+        2. ~/.claude/.env         — Claude Code default, and LifeOS's shared .env
+        3. $PAI_DIR/.env          — deprecated (PAI is now LifeOS); read only if PAI_DIR is set
 
     Public because it is the only sanctioned way to locate credentials on disk.
     Anything that needs a key should search this chain rather than reaching into
@@ -49,9 +81,9 @@ def env_file_candidates() -> list[Path]:
         PROJECT_ROOT / ".env",
         Path.home() / ".claude" / ".env",
     ]
-    pai_dir = os.environ.get("PAI_DIR")
+    pai_dir = legacy_pai_dir()
     if pai_dir:
-        candidates.append(Path(os.path.expandvars(pai_dir)).expanduser() / ".env")
+        candidates.append(pai_dir / ".env")
     seen: set[str] = set()
     ordered: list[Path] = []
     for p in candidates:
@@ -71,13 +103,14 @@ def _resolve_env_files() -> list[str]:
 def shared_env_path() -> Path:
     """Return the recommended shared .env path for write operations.
 
-    Used by `tradekit init` to decide where to persist keys. Prefers
-    $PAI_DIR/.env when PAI_DIR is set, otherwise ~/.claude/.env if the
-    directory exists, otherwise a project-local .env.
+    Used by `tradekit init` to decide where to persist keys: ~/.claude/.env (LifeOS's shared
+    .env) if that directory exists, otherwise a project-local .env. A deprecated PAI_DIR still
+    wins while it is set, because $PAI_DIR/.env is read last and would shadow a key written
+    anywhere else.
     """
-    pai_dir = os.environ.get("PAI_DIR")
+    pai_dir = legacy_pai_dir()
     if pai_dir:
-        return Path(os.path.expandvars(pai_dir)).expanduser() / ".env"
+        return pai_dir / ".env"
     claude_dir = Path.home() / ".claude"
     if claude_dir.exists():
         return claude_dir / ".env"
