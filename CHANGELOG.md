@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `depth/das_cmd.WatchConnection` checks each line before writing it: only `LOGIN`
     (WATCH only), `SB` and `UNSB`. `NEWORDER`, `CANCEL`, `SCRIPT`, a bare login, and a line
     holding CR/LF all raise `ReadOnlyViolation`.
+  - The capture and summary mask the password (`***`) everywhere, and the DAS user and
+    account (`<user>`, `<account>`) as whole tokens on login, order, trade and position lines,
+    which carry account and trader columns. Market-data lines (`$…`) are never rewritten, so
+    a short numeric ID can't replace a real size or price. Requested on #9.
   - New settings `DAS_HOST`, `DAS_PORT` (no default: it's per node), `DAS_USER`,
     `DAS_PASSWORD`, `DAS_ACCOUNT`.
 

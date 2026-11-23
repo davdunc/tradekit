@@ -3208,7 +3208,7 @@ def depth_das_probe(symbols: tuple[str, ...], kinds: str, seconds: float, out: P
     """Read-only probe of the DAS CMD API (#9). Run it on the DAS machine, during a session.
 
     Logs in in WATCH mode (which can't place orders), sends only SB subscriptions, and records
-    every line to a JSONL capture with the password redacted. It answers two open questions:
+    every line to a JSONL capture with the password, user and account masked. It answers two open questions:
     what DAS's Level 2 messages look like (if it has any), and whether DAS streams symbols that
     aren't loaded in a montage. Include at least one symbol that is NOT in any montage.
     """
@@ -3242,6 +3242,8 @@ def depth_das_probe(symbols: tuple[str, ...], kinds: str, seconds: float, out: P
             conn,
             login=das_cmd.login_line(data.das_user, data.das_password, data.das_account),
             password=data.das_password,
+            user=data.das_user,
+            account=data.das_account,
             symbols=symbols,
             kinds=kind_list,
             capture=capture,
@@ -3266,7 +3268,7 @@ def depth_das_probe(symbols: tuple[str, ...], kinds: str, seconds: float, out: P
         click.echo(f"  {token}: {n}")
     for s in (x.upper() for x in symbols):
         click.echo(f"  lines naming {s}: {result.lines_per_symbol.get(s, 0)}")
-    click.echo("Attach the capture to #9 (it holds no password).")
+    click.echo("Attach the capture to #9: the password, user and account are already masked.")
 
 
 @cli.group()
