@@ -18,7 +18,7 @@
 <!-- Check any that apply; leave the rest unchecked. -->
 
 - [ ] Touches the `.env` loader or `tradekit init` wizard
-- [ ] Touches shared-environment assumptions (PAI_DIR, ~/.claude/.env)
+- [ ] Touches shared-environment assumptions (~/.claude/.env, LIFEOS_DIR)
 - [ ] Works standalone (no LifeOS context)
 - [ ] N/A — not a LifeOS-facing change
 

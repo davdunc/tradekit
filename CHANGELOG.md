@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **PAI is now LifeOS, in the code as well as the docs** (#5). LifeOS renamed `PAI_DIR` to
+  `LIFEOS_DIR`, but they aren't the same directory. `PAI_DIR` held the shared `.env`;
+  `LIFEOS_DIR` is LifeOS's data and tools directory (default `~/.claude/LIFEOS`); and LifeOS
+  keeps the shared `.env` at `~/.claude/.env`, which tradekit already reads.
+  - `PAI_DIR` is deprecated. While it's set, `$PAI_DIR/.env` is still read (last, as before),
+    `tradekit init` still writes there, and tradekit warns once.
+  - The inference wrapper looks for `$LIFEOS_DIR/TOOLS/Inference.ts`, falling back to a
+    legacy `~/.claude/PAI/Tools/Inference.ts` install.
+  - The docs now give the precedence as the code applies it: the shared `~/.claude/.env`
+    overrides a project-local `./.env`. README, `.env.example` and SPEC had it reversed.
+
 - **Publishing to PyPI is opt-in.** A `v*` tag push now only builds the GitHub release. To
   publish, tick "Publish to PyPI" on a manual run of the Release workflow, or set the
   repository variable `PYPI_PUBLISH=true` for every tag. Before this, every tag tried to
@@ -393,7 +404,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Initial release. Extracted from the `davdunc/Alvin` monorepo into a
 standalone package designed to integrate with Daniel Miessler's
-[LifeOS][pai] (formerly Personal AI Infrastructure / PAI).
+[LifeOS][lifeos] (formerly Personal AI Infrastructure / PAI).
 
 ### Added
 
@@ -424,7 +435,7 @@ standalone package designed to integrate with Daniel Miessler's
 - Requires Python 3.14+
 - Methodology references [SMB Capital][smb]'s published playbook material
 
-[pai]: https://github.com/danielmiessler/LifeOS
+[lifeos]: https://github.com/danielmiessler/LifeOS
 [smb]: https://www.smbtraining.com/
 [Unreleased]: https://github.com/davdunc/tradekit/compare/v0.6.0...HEAD
 [0.6.0]: https://github.com/davdunc/tradekit/compare/v0.5.0...v0.6.0

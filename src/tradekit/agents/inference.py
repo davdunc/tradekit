@@ -1,8 +1,9 @@
-"""Subprocess wrapper around the PAI Inference tool.
+"""Subprocess wrapper around the LifeOS Inference tool (LifeOS was formerly PAI, #5).
 
-Per AISTEERINGRULES, all LLM calls go through `bun ~/.claude/PAI/Tools/Inference.ts`
-rather than importing the Anthropic SDK directly. This keeps billing on the user's
-Claude Code subscription and centralizes model selection (fast/standard/smart).
+Per AISTEERINGRULES, all LLM calls go through `bun $LIFEOS_DIR/TOOLS/Inference.ts`
+(default ``~/.claude/LIFEOS/TOOLS/Inference.ts``) rather than importing the Anthropic SDK
+directly. This keeps billing on the user's Claude Code subscription and centralizes model
+selection (fast/standard/smart).
 """
 
 from __future__ import annotations
@@ -13,7 +14,19 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-INFERENCE_TS = Path.home() / ".claude" / "PAI" / "Tools" / "Inference.ts"
+from tradekit.config import lifeos_dir
+
+#: Where a pre-LifeOS (PAI) install kept the tool. Used only when the LifeOS path is missing.
+LEGACY_INFERENCE_TS = Path.home() / ".claude" / "PAI" / "Tools" / "Inference.ts"
+
+
+def inference_tool() -> Path:
+    """The LifeOS Inference.ts, else a legacy PAI install's; the LifeOS path when neither exists."""
+    current = lifeos_dir() / "TOOLS" / "Inference.ts"
+    if current.exists() or not LEGACY_INFERENCE_TS.exists():
+        return current
+    return LEGACY_INFERENCE_TS
+
 
 Level = str  # "fast" | "standard" | "smart"
 
@@ -35,11 +48,12 @@ async def call(
     expect_json: bool = False,
     timeout_s: float = 90.0,
 ) -> InferenceResult:
-    """Invoke PAI Inference asynchronously."""
-    if not INFERENCE_TS.exists():
-        return InferenceResult(False, "", None, f"Inference.ts not found at {INFERENCE_TS}", 0, level)
+    """Invoke LifeOS Inference asynchronously."""
+    tool = inference_tool()
+    if not tool.exists():
+        return InferenceResult(False, "", None, f"LifeOS Inference.ts not found at {tool}", 0, level)
 
-    args = ["bun", str(INFERENCE_TS), "--level", level, "--timeout", str(int(timeout_s * 1000))]
+    args = ["bun", str(tool), "--level", level, "--timeout", str(int(timeout_s * 1000))]
     if expect_json:
         args.append("--json")
     args.extend([system_prompt, user_prompt])

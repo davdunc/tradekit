@@ -240,16 +240,20 @@ ten levels from AMEX, BYX, CHX, EDGEA, MEMX, NYSENAT, PEARL and others.
 Resolution order, widest to narrowest — later wins:
 
 1. Package defaults in `config.py`
-2. Shared LifeOS `.env`, when present (`$PAI_DIR/.env` or `~/.claude/.env`)
-3. Project-local `.env`
+2. Project-local `.env`
+3. LifeOS's shared `.env` at `~/.claude/.env` (also the Claude Code default). A deprecated
+   `$PAI_DIR/.env` is read after it while `PAI_DIR` is set (PAI is now LifeOS, #5).
 4. Process environment
 5. Explicit CLI flags
+
+The shared `.env` overrides the project-local one (`env_file_candidates()`, pinned by
+`tests/test_config_massive.py`). Earlier versions of this list had the two the other way round.
 
 Three invariants, from `CONTRIBUTING.md` and kept here because they constrain code:
 
 - **One shared `.env`.** tradekit never requires a second copy of a key the
   ecosystem already holds.
-- **Standalone must work.** Zero LifeOS context — no `PAI_DIR`, no `~/.claude/.env` —
+- **Standalone must work.** Zero LifeOS context — no `~/.claude/.env` —
   is a supported configuration, not a degraded one.
 - **No personal data in defaults.** Account sizes, watchlists, broker identifiers
   and machine-specific paths live in user-owned YAML or `.env`. This repository is
