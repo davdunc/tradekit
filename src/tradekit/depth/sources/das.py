@@ -20,6 +20,13 @@ What finishing it involves:
    over to IBKR at once.
 5. **Tests.** Record a few minutes of raw CMD API output as a fixture and test the parser
    against it, as ``test_depth_sources.py`` does for the IBKR and Alpaca mappings.
+
+Started (#9): ``tradekit.depth.das_cmd`` holds the read-only transport this adapter will use.
+It logs in in WATCH mode only (the trailing ``1``) and sends only ``LOGIN``/``SB``/``UNSB``.
+``tradekit depth das-probe``, run on the DAS machine during a session, records the raw replies
+that items 3 and 5 need. It also answers whether DAS streams symbols that aren't in a montage.
+DAS binds loopback, so the DAS side runs on ``daslaptop`` itself (item 1's tunnel is only
+needed for a recorder on another host).
 """
 
 from __future__ import annotations

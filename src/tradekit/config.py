@@ -191,7 +191,17 @@ class DataSettings(BaseSettings):
     apca_api_secret_key: str = ""
     alpaca_feed: str = "iex"
 
-    @field_validator("ibkr_port", mode="before")
+    # DAS Trader CMD API (#9). Read only by tradekit.depth.das_cmd, which logs in in WATCH mode and
+    # refuses every order command. Host and port take no default: the port is set per node in DAS
+    # (Setup > API; 9910 is the factory value, at least one node runs 3192) and must not be guessed.
+    # From toolsmith, DAS is reached through an SSH local forward, never a port opened to the network.
+    das_host: str = ""
+    das_port: int | None = None
+    das_user: str = ""
+    das_password: str = ""
+    das_account: str = ""
+
+    @field_validator("ibkr_port", "das_port", mode="before")
     @classmethod
     def _blank_port_is_unset(cls, value):
         """``IBKR_PORT=`` (as in .env.example) means unset, not a parse error for every command."""
