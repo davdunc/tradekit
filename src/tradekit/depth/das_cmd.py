@@ -50,8 +50,10 @@ def check_command(line: str) -> str:
     verb = line.split(maxsplit=1)[0].upper() if line.strip() else ""
     if verb not in ALLOWED_VERBS:
         raise ReadOnlyViolation(f"{verb or 'an empty line'} is not allowed: this connection is read-only")
-    if verb == "LOGIN" and not line.rstrip().endswith(" 1"):
-        raise ReadOnlyViolation("LOGIN must be a WATCH login (trailing 1)")
+    if verb == "LOGIN":
+        tokens = line.split()
+        if len(tokens) != 5 or tokens[4] != "1":
+            raise ReadOnlyViolation("LOGIN must be exactly a WATCH login: LOGIN <user> <password> <account> 1")
     return line
 
 

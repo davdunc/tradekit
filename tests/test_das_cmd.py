@@ -25,6 +25,10 @@ from tradekit.depth.das_cmd import ReadOnlyViolation, WatchConnection, check_com
         "SB AAPL Lv2\r\nNEWORDER 1 B AAPL",  # smuggled second command
         "SB AAPL Lv2\nCANCEL ALL",
         "LOGIN user pw acct",  # bare login: not WATCH
+        "LOGIN user pw acct 1 1",  # #63 review: ends in " 1" but isn't the WATCH form
+        "LOGIN user pw acct 1 extra",
+        "LOGIN user pw 1",  # account missing: "1" would be read as the account
+        "LOGIN user pw acct 0",
     ],
 )
 def test_anything_but_watch_login_and_market_data_is_refused(line):
