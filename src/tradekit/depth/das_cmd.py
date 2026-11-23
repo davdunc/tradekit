@@ -14,7 +14,7 @@ connection unable to trade in two independent ways (#9, "WATCH mode" amendment):
 What isn't known yet, and why the probe exists: the Level 2 message format, and whether DAS
 streams symbols that aren't loaded in a montage. The DAS reference on this machine even says the
 API has no Level 2. ``tradekit depth das-probe`` subscribes a few symbols, records every line
-sent and received to a JSONL capture (password redacted), and prints a summary. That capture is
+sent and received to a JSONL capture (credentials redacted), and prints a summary. That capture is
 the evidence for both questions and the fixture the DAS ``DepthSource`` parser will be tested on.
 """
 
@@ -74,6 +74,35 @@ def subscribe_line(symbol: str, kind: str) -> str:
     return f"SB {symbol} {kind}"
 
 
+def redactor(password: str, user: str = "", account: str = ""):
+    """A function masking the login credentials in a line, sent or received.
+
+    - The password becomes ``***`` anywhere.
+    - The user and account become ``<user>`` and ``<account>`` as whole tokens, on every line
+      that isn't market data. DAS's ``#Order``/``#Trade``/``%IPOS`` rows carry account and trader
+      columns, so the IDs leave the login line too.
+    - Market data (lines starting with ``$``: ``$Lv2``, ``$Quote``, ...) carries no account
+      fields, so it is never rewritten: a short numeric ID must not replace a real size or
+      price in the capture.
+    """
+    bound = r"(?<![A-Za-z0-9.]){}(?![A-Za-z0-9]|\.\d)"
+    tokens = [
+        (re.compile(bound.format(re.escape(value))), label)
+        for value, label in ((user, "<user>"), (account, "<account>"))
+        if value
+    ]
+
+    def redact(line: str) -> str:
+        if password:
+            line = line.replace(password, "***")
+        if not line.startswith("$"):
+            for pattern, label in tokens:
+                line = pattern.sub(label, line)
+        return line
+
+    return redact
+
+
 def login_refused(reply: str) -> bool:
     return bool(_REFUSAL.search(reply))
 
@@ -129,6 +158,8 @@ async def probe(
     *,
     login: str,
     password: str,
+    user: str = "",
+    account: str = "",
     symbols: Sequence[str],
     kinds: Sequence[str] = DEFAULT_KINDS,
     capture: Path,
@@ -140,10 +171,12 @@ async def probe(
     """WATCH-login, subscribe each symbol to each kind, and record everything for ``listen`` s.
 
     Stops after the login reply if it reads as a refusal, without subscribing. Every line is
-    written to ``capture`` as ``{"t", "dir": "sent"|"recv", "line"}`` with the password redacted.
+    written to ``capture`` as ``{"t", "dir": "sent"|"recv", "line"}``, with the password, user and
+    account masked (:func:`redactor`), as are the login reply and sent lines in the result.
     """
     capture.parent.mkdir(parents=True, exist_ok=True)
     result = ProbeResult(capture=capture)
+    redact = redactor(password, user, account)
     wanted = [s.upper() for s in symbols]
     queue: asyncio.Queue[str | None] = asyncio.Queue()
 
@@ -155,14 +188,14 @@ async def probe(
     with capture.open("w", encoding="utf-8") as fh:
 
         def write(direction: str, line: str) -> None:
-            shown = line.replace(password, "***") if password else line
+            shown = redact(line)
             fh.write(json.dumps({"t": clock().isoformat(), "dir": direction, "line": shown}) + "\n")
             fh.flush()
 
         async def send(line: str) -> None:
             await conn.send(line)
             write("sent", line)
-            result.sent.append(line.replace(password, "***") if password else line)
+            result.sent.append(redact(line))
 
         async def drain(seconds: float, *, during_login: bool = False) -> bool:
             """Record received lines for ``seconds``. False once the server has closed."""
@@ -185,7 +218,7 @@ async def probe(
                     if s in tokens:
                         result.lines_per_symbol[s] += 1
                 if during_login:
-                    result.login_reply.append(line)
+                    result.login_reply.append(redact(line))
             return True
 
         reader = asyncio.create_task(pump())
