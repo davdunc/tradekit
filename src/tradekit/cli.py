@@ -3194,6 +3194,81 @@ def depth_record(
     click.echo(f"Stopped. {sink.rows_written} rows written under {root}")
 
 
+@depth.command("das-probe")
+@click.argument("symbols", nargs=-1, required=True)
+@click.option("--kinds", default="Lv1,Lv2,tms", show_default=True, help="Comma-separated SB subscription kinds.")
+@click.option("--seconds", type=float, default=60.0, show_default=True, help="How long to listen after subscribing.")
+@click.option(
+    "--out",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="JSONL capture path. Default: the depth dir's das-probe-<UTC time>.jsonl.",
+)
+def depth_das_probe(symbols: tuple[str, ...], kinds: str, seconds: float, out: Path | None):
+    """Read-only probe of the DAS CMD API (#9). Run it on the DAS machine, during a session.
+
+    Logs in in WATCH mode (which can't place orders), sends only SB subscriptions, and records
+    every line to a JSONL capture with the password redacted. It answers two open questions:
+    what DAS's Level 2 messages look like (if it has any), and whether DAS streams symbols that
+    aren't loaded in a montage. Include at least one symbol that is NOT in any montage.
+    """
+    import asyncio
+    import datetime as dt
+
+    from tradekit.config import get_settings
+    from tradekit.depth import das_cmd
+    from tradekit.paths import depth_dir
+
+    data = get_settings().data
+    needed = {
+        "das_host": data.das_host,
+        "das_port": data.das_port,
+        "das_user": data.das_user,
+        "das_password": data.das_password,
+        "das_account": data.das_account,
+    }
+    missing = [env_var(name) for name, value in needed.items() if not value]
+    if missing:
+        raise click.UsageError(
+            f"set {', '.join(missing)} in .env. On the DAS machine the host is 127.0.0.1; the port is "
+            "DAS's own (Setup > API), with no default."
+        )
+    capture = out or depth_dir() / f"das-probe-{dt.datetime.now(dt.UTC):%Y%m%dT%H%M%SZ}.jsonl"
+    kind_list = [k.strip() for k in kinds.split(",") if k.strip()]
+
+    async def main():
+        conn = await das_cmd.WatchConnection.open(data.das_host, data.das_port)
+        return await das_cmd.probe(
+            conn,
+            login=das_cmd.login_line(data.das_user, data.das_password, data.das_account),
+            password=data.das_password,
+            symbols=symbols,
+            kinds=kind_list,
+            capture=capture,
+            listen=seconds,
+        )
+
+    try:
+        result = asyncio.run(main())
+    except (OSError, TimeoutError) as e:
+        raise click.ClickException(
+            f"can't reach DAS at {data.das_host}:{data.das_port} ({type(e).__name__}). DAS binds loopback: "
+            "run this on the DAS machine, with DAS running and its API enabled."
+        ) from e
+    click.echo(f"Capture: {result.capture}")
+    click.echo("Login reply: " + (" | ".join(result.login_reply) if result.login_reply else "(nothing)"))
+    if result.login_refused:
+        click.echo("Login looks refused, so nothing was subscribed.")
+    if result.closed_by_server:
+        click.echo("DAS closed the connection.")
+    click.echo(f"Sent {len(result.sent)} lines; received {result.received}.")
+    for token, n in result.first_tokens.most_common(12):
+        click.echo(f"  {token}: {n}")
+    for s in (x.upper() for x in symbols):
+        click.echo(f"  lines naming {s}: {result.lines_per_symbol.get(s, 0)}")
+    click.echo("Attach the capture to #9 (it holds no password).")
+
+
 @cli.group()
 def cards():
     """Canonical report cards: render and inspect stored game plans."""

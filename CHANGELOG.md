@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`tradekit depth das-probe SYMBOLS...`: a read-only probe of the DAS CMD API** (#9). Run it
+  on the DAS machine during a session. It logs in in **WATCH mode** only (`LOGIN … 1`, which
+  can't place orders) and sends only `SB` subscriptions (`--kinds`, default `Lv1,Lv2,tms`).
+  It records every line sent and received to a JSONL capture with the password redacted, then
+  prints a summary. It's there to answer what DAS's Level 2 messages look like, if they exist,
+  and whether DAS streams symbols that aren't in a montage. The capture becomes the DAS
+  adapter's test fixture.
+  - `depth/das_cmd.WatchConnection` checks each line before writing it: only `LOGIN`
+    (WATCH only), `SB` and `UNSB`. `NEWORDER`, `CANCEL`, `SCRIPT`, a bare login, and a line
+    holding CR/LF all raise `ReadOnlyViolation`.
+  - New settings `DAS_HOST`, `DAS_PORT` (no default: it's per node), `DAS_USER`,
+    `DAS_PASSWORD`, `DAS_ACCOUNT`.
+
 ### Changed
 
 - **PAI is now LifeOS, in the code as well as the docs** (#5). LifeOS renamed `PAI_DIR` to
