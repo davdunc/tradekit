@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Publishing to PyPI is opt-in.** A `v*` tag push now only builds the GitHub release. To
+  publish, tick "Publish to PyPI" on a manual run of the Release workflow, or set the
+  repository variable `PYPI_PUBLISH=true` for every tag. Before this, every tag tried to
+  publish and failed (`invalid-publisher`) without a trusted publisher on pypi.org.
+
 ## [0.6.0] — 2026-11-22
 
 ### Added
