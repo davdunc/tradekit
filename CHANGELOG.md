@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **The DAS depth source works: `tradekit depth record --source das` (and `auto`)** (#9). It runs
+  on the DAS machine, where DAS binds loopback.
+  - It logs in in WATCH mode through the read-only `WatchConnection`, and records only after
+    DAS answers `#LOGIN SUCCESSED` followed by the `#IPOS` header. Otherwise it refuses, and
+    `auto` falls back to IBKR.
+  - It subscribes `Lv2` and `tms`. `$Lv2` montage rows become `BookUpdate`s keyed by venue
+    (`position = VENUE_KEYED`): a venue's first `UPDATED` is an `insert`, later ones are
+    `update`s, and `REMOVED` is a `delete`, with a `0` price or size stored as null. `$T&S`
+    prints become `Trade`s, timed by their ET stamp. Unknown actions and malformed lines
+    become error markers rather than guesses.
+  - It's tested on the overnight and premarket probe captures from #9, committed as fixtures.
+  - `depth record --source das` without the `DAS_*` settings is a usage error. With
+    `--source auto` it warns and records from the fallback.
+
 - **`tradekit depth das-probe SYMBOLS...`: a read-only probe of the DAS CMD API** (#9). Run it
   on the DAS machine during a session. It logs in in **WATCH mode** only (`LOGIN … 1`, which
   can't place orders) and sends only `SB` subscriptions (`--kinds`, default `Lv1,Lv2,tms`).
