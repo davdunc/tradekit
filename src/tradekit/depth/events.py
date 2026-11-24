@@ -16,6 +16,9 @@ MarkerKind = Literal["start", "stop", "switch", "gap_start", "gap_end", "error"]
 
 #: ``depth_levels`` value for a source that delivers the full book it is subscribed to.
 FULL_DEPTH = 0
+#: ``position`` for a row keyed by venue, not by level: one venue's own best bid or ask (DAS's
+#: Level 2 montage). Rebuild that book from (side, venue); there is no level index to report.
+VENUE_KEYED = -1
 
 
 def utcnow() -> dt.datetime:
@@ -26,7 +29,8 @@ def utcnow() -> dt.datetime:
 class BookUpdate:
     """One change to one price level of one side of the book.
 
-    ``position`` is the level index (0 = best). ``depth_levels`` is how many levels the source
+    ``position`` is the level index (0 = best), or ``VENUE_KEYED`` when the source keys its book
+    by venue (DAS). ``depth_levels`` is how many levels the source
     can deliver at all: ``FULL_DEPTH`` for a depth feed, 1 for a top-of-book feed such as
     Alpaca, so level 1 data can never pass for depth.
     """

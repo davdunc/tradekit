@@ -1,0 +1,62 @@
+{"t": "2026-11-23T09:11:13.005096+00:00", "dir": "sent", "line": "LOGIN <user> *** <account> 1"}
+{"t": "2026-11-23T09:11:13.005263+00:00", "dir": "recv", "line": "#Welcome to DAS Command API"}
+{"t": "2026-11-23T09:11:13.005340+00:00", "dir": "recv", "line": "#Please login to continue."}
+{"t": "2026-11-23T09:11:13.005633+00:00", "dir": "recv", "line": "#LOGIN SUCCESSED"}
+{"t": "2026-11-23T09:11:13.049677+00:00", "dir": "recv", "line": "#IPOS account symb type qty avgcost initqty initprice Realized CreatTime Unrealized"}
+{"t": "2026-11-23T09:11:13.049762+00:00", "dir": "recv", "line": "#POSEND"}
+{"t": "2026-11-23T09:11:13.049778+00:00", "dir": "recv", "line": "#Order id token symb b/s mkt/lmt qty lvqty cxlqty price route status time origoid account trader orderSrc TIF Pref"}
+{"t": "2026-11-23T09:11:13.049796+00:00", "dir": "recv", "line": "#OrderEnd"}
+{"t": "2026-11-23T09:11:13.049806+00:00", "dir": "recv", "line": "#Trade id symb b/s qty price route time orderid Liq EcnFee PL"}
+{"t": "2026-11-23T09:11:13.049818+00:00", "dir": "recv", "line": "#TradeEnd"}
+{"t": "2026-11-23T09:11:13.049829+00:00", "dir": "recv", "line": "#SLOrder id symb shares openshares exeshares exeprice status route time lmtPrice token notes"}
+{"t": "2026-11-23T09:11:13.049842+00:00", "dir": "recv", "line": "#SLOrderEnd"}
+{"t": "2026-11-23T09:11:18.011161+00:00", "dir": "sent", "line": "SB DELL Lv1"}
+{"t": "2026-11-23T09:11:19.012382+00:00", "dir": "sent", "line": "SB DELL Lv2"}
+{"t": "2026-11-23T09:11:20.013604+00:00", "dir": "sent", "line": "SB DELL tms"}
+{"t": "2026-11-23T09:11:21.014521+00:00", "dir": "sent", "line": "SB BE Lv1"}
+{"t": "2026-11-23T09:11:22.015676+00:00", "dir": "sent", "line": "SB BE Lv2"}
+{"t": "2026-11-23T09:11:23.017213+00:00", "dir": "sent", "line": "SB BE tms"}
+{"t":"2026-11-23T09:11:19.012909+00:00","dir":"recv","line":"$Lv2 DELL B BATS 302.41 10 UPDATED 03:08:45"}
+{"t":"2026-11-23T09:11:19.053887+00:00","dir":"recv","line":"$Lv2 DELL B NASD 302 4 UPDATED 03:00:00"}
+{"t":"2026-11-23T09:11:19.054002+00:00","dir":"recv","line":"$Lv2 DELL B EDGX 302 1 UPDATED 03:11:19"}
+{"t":"2026-11-23T09:11:19.054016+00:00","dir":"recv","line":"$Lv2 DELL B ARCA 301.56 1 UPDATED 03:11:19"}
+{"t":"2026-11-23T09:11:19.054027+00:00","dir":"recv","line":"$Lv2 DELL B MEMX 300.5 2 UPDATED 03:08:58"}
+{"t":"2026-11-23T09:11:19.054036+00:00","dir":"recv","line":"$Lv2 DELL A NASD 303.45 4 UPDATED 03:00:00"}
+{"t":"2026-11-23T09:11:19.054044+00:00","dir":"recv","line":"$Lv2 DELL A MEMX 303.46 2 UPDATED 03:10:38"}
+{"t":"2026-11-23T09:11:19.054052+00:00","dir":"recv","line":"$Lv2 DELL A ARCA 303.46 1 UPDATED 03:00:00"}
+{"t":"2026-11-23T09:11:19.054059+00:00","dir":"recv","line":"$Lv2 DELL A EDGX 303.5 3 UPDATED 03:11:19"}
+{"t":"2026-11-23T09:11:19.054066+00:00","dir":"recv","line":"$Lv2 DELL A BATS 305.2 2 UPDATED 03:00:00"}
+{"t":"2026-11-23T09:11:19.054076+00:00","dir":"recv","line":"$Lv2 DELL A 24X 390 12 UPDATED 03:00:00"}
+{"t":"2026-11-23T09:11:19.851377+00:00","dir":"recv","line":"$Lv2 DELL B EDGX 301.84 1 UPDATED 03:11:19"}
+{"t":"2026-11-23T09:11:19.968195+00:00","dir":"recv","line":"$Lv2 DELL B EDGX 301.98 1 UPDATED 03:11:19"}
+{"t":"2026-11-23T09:11:20.092644+00:00","dir":"recv","line":"$Lv2 DELL B EDGX 302 1 UPDATED 03:11:20"}
+{"t":"2026-11-23T09:11:20.092776+00:00","dir":"recv","line":"$Lv2 DELL B EDGX 302.12 1 UPDATED 03:11:20"}
+{"t":"2026-11-23T09:14:00.559033+00:00","dir":"recv","line":"$Lv2 BE B 24X 0 0 REMOVED 03:14:00"}
+{"t":"2026-11-23T09:14:33.044306+00:00","dir":"recv","line":"$Lv2 BE B 24X 0 0 REMOVED 03:14:32"}
+{"t":"2026-11-23T09:11:18.011752+00:00","dir":"recv","line":"$Quote DELL A:303.45 Asz:3 B:302.41 Bsz:10 V:70974 L:303.45 Hi:303.45 Lo:297.01 op:0 ycl:278.02 tcl:0 PE:N VWAP:299.58 tradesAllDay:2266 RVOL:30069 T:04:10:49"}
+{"t":"2026-11-23T09:11:18.982847+00:00","dir":"recv","line":"$Quote DELL V:70975 tradesAllDay:2266"}
+{"t":"2026-11-23T09:11:20.708804+00:00","dir":"recv","line":"$Quote DELL A:303.44 Asz:4 V:70975 tradesAllDay:2267 T:04:11:20"}
+{"t":"2026-11-23T09:11:21.187918+00:00","dir":"recv","line":"$Quote BE A:154.28 Asz:3 B:154 Bsz:2 V:156878 L:154.14 Hi:154.2 Lo:151.26 op:0 ycl:142.39 tcl:0 PE:N VWAP:151.86 tradesAllDay:4552 RVOL:29394 T:04:11:18"}
+{"t":"2026-11-23T09:11:26.101794+00:00","dir":"recv","line":"$Quote BE A:154.49 Asz:1 V:157136 L:154.3 Hi:154.3 tradesAllDay:4556 RVOL:29443 T:04:11:25"}
+{"t":"2026-11-23T09:11:26.101804+00:00","dir":"recv","line":"$Quote BE"}
+{"t":"2026-11-23T09:11:27.366987+00:00","dir":"recv","line":"$Quote BE Bsz:3 T:04:11:27"}
+{"t":"2026-11-23T09:11:27.503111+00:00","dir":"recv","line":"$Quote BE V:157146 tradesAllDay:4556"}
+{"t":"2026-11-23T09:11:28.165936+00:00","dir":"recv","line":"$Quote BE B:153.95 Bsz:2 V:157146 tradesAllDay:4557 RVOL:29445 T:04:11:28"}
+{"t":"2026-11-23T09:11:28.287074+00:00","dir":"recv","line":"$Quote BE B:154 Bsz:1"}
+{"t":"2026-11-23T09:11:28.412525+00:00","dir":"recv","line":"$Quote DELL V:70976 tradesAllDay:2267"}
+{"t":"2026-11-23T09:11:28.608773+00:00","dir":"recv","line":"$Quote DELL V:70976 tradesAllDay:2268"}
+{"t":"2026-11-23T09:11:23.191529+00:00","dir":"recv","line":"$T&S BE 153.97 5 F 04:10:44 ARCA I 64"}
+{"t":"2026-11-23T09:11:23.191720+00:00","dir":"recv","line":"$T&S BE 153.96 5 F 04:10:44 NASD I 64"}
+{"t":"2026-11-23T09:11:23.191740+00:00","dir":"recv","line":"$T&S BE 154 5 F 04:10:44 ARCA I 64"}
+{"t":"2026-11-23T09:11:23.191752+00:00","dir":"recv","line":"$T&S BE 153.98 5 F 04:10:44 NASD I 64"}
+{"t":"2026-11-23T09:11:23.191762+00:00","dir":"recv","line":"$T&S BE 154.13 15 I 04:10:51 NASD I 64"}
+{"t":"2026-11-23T09:11:23.191772+00:00","dir":"recv","line":"$T&S BE 154 5 F 04:10:51 NASD I 64"}
+{"t":"2026-11-23T09:11:23.191780+00:00","dir":"recv","line":"$T&S BE 153.9 1 I 04:10:51 FADF S 66"}
+{"t":"2026-11-23T09:11:23.191788+00:00","dir":"recv","line":"$T&S BE 154.07 50 T 04:10:53 NASD I 112"}
+{"t":"2026-11-23T09:11:23.191797+00:00","dir":"recv","line":"$T&S BE 153.98 1 F 04:10:55 ARCA I 64"}
+{"t":"2026-11-23T09:11:23.191818+00:00","dir":"recv","line":"$T&S BE 153.98 10 F 04:10:55 ARCA I 64"}
+{"t":"2026-11-23T09:11:23.191827+00:00","dir":"recv","line":"$T&S BE 153.96 5 F 04:10:55 EDGX I 64"}
+{"t":"2026-11-23T09:11:23.191835+00:00","dir":"recv","line":"$T&S BE 153.872 20 I 04:10:57 FADF I 64"}
+{"t":"2026-11-23T09:11:23.191843+00:00","dir":"recv","line":"$T&S BE 153.8 10 I 04:10:59 FADF S 66"}
+{"t":"2026-11-23T09:11:23.191850+00:00","dir":"recv","line":"$T&S BE 154 5 I 04:11:00 NASD I 64"}
+{"t":"2026-11-23T09:11:23.191858+00:00","dir":"recv","line":"$T&S BE 154 1 I 04:11:02 ARCA I 64"}

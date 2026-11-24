@@ -122,17 +122,17 @@ def test_single_source_records_and_marks_start_and_stop():
     assert src.closed >= 1  # stopping the recorder closes the source
 
 
-def test_unimplemented_das_falls_back_to_ibkr_and_is_reported_once():
+def test_unconfigured_das_falls_back_to_ibkr_and_is_reported_once():
     sink, ibkr = ListSink(), Scripted("ibkr")
-    rec = Recorder([DASSource(), ibkr], ["AAPL"], sink, retry_seconds=0.01)
+    rec = Recorder([DASSource("", None, "", "", ""), ibkr], ["AAPL"], sink, retry_seconds=0.01)
 
     async def script(stop):
         await until(lambda: len(sink.books("ibkr")) >= 3)
         await asyncio.sleep(0.1)  # several more supervision passes
 
     run(rec, script)
-    not_impl = [m for m in sink.markers("error", "das") if "not implemented" in m.detail]
-    assert len(not_impl) == 1
+    unconfigured = [m for m in sink.markers("error", "das") if "DAS_HOST" in m.detail]
+    assert len(unconfigured) == 1
     assert sink.markers("switch", "ibkr")
 
 

@@ -20,7 +20,7 @@ def factories(levels: int = 10) -> dict[str, Callable[[], DepthSource]]:
     def das() -> DepthSource:
         from tradekit.depth.sources.das import DASSource
 
-        return DASSource()
+        return DASSource(data.das_host, data.das_port, data.das_user, data.das_password, data.das_account)
 
     def ibkr() -> DepthSource:
         from tradekit.depth.sources.ibkr import IBKRSource

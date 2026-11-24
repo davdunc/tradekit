@@ -119,7 +119,7 @@ def test_ibkr_port_from_env_is_an_int(monkeypatch):
 def test_unconfigured_ibkr_in_auto_is_skipped_once_and_recorded_as_a_gap():
     sink = SimpleNamespace(events=[], flush=lambda: None)
     sink.add = sink.events.append
-    recorder = Recorder([DASSource(), IBKRSource("", None)], ["SPY"], sink, retry_seconds=0.01)
+    recorder = Recorder([DASSource("", None, "", "", ""), IBKRSource("", None)], ["SPY"], sink, retry_seconds=0.01)
 
     async def run_briefly():
         stop = asyncio.Event()
@@ -179,14 +179,6 @@ def test_factories_read_settings(monkeypatch):
     assert (ibkr.port, ibkr.levels) == (4001, 5)
 
 
-# ----- DAS: placeholder until finished on a DAS host -----
-
-
-def test_das_is_not_implemented_yet():
-    with pytest.raises(NotImplementedError, match="DAS Trader"):
-        asyncio.run(DASSource().connect())
-
-
 # ----- CLI -----
 
 
@@ -205,6 +197,11 @@ def _settings(host="", port=None, depth_limit=4):
         apca_api_key_id="",
         apca_api_secret_key="",
         alpaca_feed="iex",
+        das_host="",
+        das_port=None,
+        das_user="",
+        das_password="",
+        das_account="",
     )
     return SimpleNamespace(data=data)
 

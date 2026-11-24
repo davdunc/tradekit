@@ -1,0 +1,67 @@
+{"t": "2026-11-23T03:00:35.750710+00:00", "dir": "sent", "line": "LOGIN <acct> *** <trader> 1"}
+{"t": "2026-11-23T03:00:35.750850+00:00", "dir": "recv", "line": "#Welcome to DAS Command API"}
+{"t": "2026-11-23T03:00:35.750922+00:00", "dir": "recv", "line": "#Please login to continue."}
+{"t": "2026-11-23T03:00:35.750969+00:00", "dir": "recv", "line": "#LOGIN SUCCESSED"}
+{"t": "2026-11-23T03:00:35.797734+00:00", "dir": "recv", "line": "#IPOS account symb type qty avgcost initqty initprice Realized CreatTime Unrealized"}
+{"t": "2026-11-23T03:00:35.797818+00:00", "dir": "recv", "line": "#POSEND"}
+{"t": "2026-11-23T03:00:35.797834+00:00", "dir": "recv", "line": "#Order id token symb b/s mkt/lmt qty lvqty cxlqty price route status time origoid account trader orderSrc TIF Pref"}
+{"t": "2026-11-23T03:00:35.797849+00:00", "dir": "recv", "line": "#OrderEnd"}
+{"t": "2026-11-23T03:00:35.797858+00:00", "dir": "recv", "line": "#Trade id symb b/s qty price route time orderid Liq EcnFee PL"}
+{"t": "2026-11-23T03:00:35.797867+00:00", "dir": "recv", "line": "#TradeEnd"}
+{"t": "2026-11-23T03:00:35.797875+00:00", "dir": "recv", "line": "#SLOrder id symb shares openshares exeshares exeprice status route time lmtPrice token notes"}
+{"t": "2026-11-23T03:00:35.797885+00:00", "dir": "recv", "line": "#SLOrderEnd"}
+{"t": "2026-11-23T03:00:40.756119+00:00", "dir": "sent", "line": "SB DELL Lv1"}
+{"t": "2026-11-23T03:00:40.756700+00:00", "dir": "recv", "line": "$Quote DELL A:0 Asz:0 B:0 Bsz:0 V:0 L:0 Hi:0 Lo:0 op:0 ycl:278.02 tcl:0 PE:N VWAP:0 tradesAllDay:0 RVOL:0 T:19:00:00"}
+{"t": "2026-11-23T03:00:41.758119+00:00", "dir": "sent", "line": "SB DELL Lv2"}
+{"t": "2026-11-23T03:00:41.956723+00:00", "dir": "recv", "line": "$Lv2 DELL A BOAT 293.4 2 REMOVED 21:00:41"}
+{"t": "2026-11-23T03:00:42.176356+00:00", "dir": "recv", "line": "$Lv2 DELL A BOAT 293 1 REMOVED 21:00:42"}
+{"t": "2026-11-23T03:00:42.492173+00:00", "dir": "recv", "line": "$Lv2 DELL A BOAT 293.4 2 REMOVED 21:00:42"}
+{"t": "2026-11-23T03:00:42.696378+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.8 0 REMOVED 21:00:42"}
+{"t": "2026-11-23T03:00:42.696570+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.8 0 REMOVED 21:00:42"}
+{"t": "2026-11-23T03:00:42.758946+00:00", "dir": "sent", "line": "SB DELL tms"}
+{"t": "2026-11-23T03:00:43.116413+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.9 0 REMOVED 21:00:43"}
+{"t": "2026-11-23T03:00:43.226993+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.9 0 REMOVED 21:00:43"}
+{"t": "2026-11-23T03:00:43.429371+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 292 0 REMOVED 21:00:43"}
+{"t": "2026-11-23T03:00:43.531495+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 292 0 REMOVED 21:00:43"}
+{"t": "2026-11-23T03:00:43.531627+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.1 0 REMOVED 21:00:43"}
+{"t": "2026-11-23T03:00:43.531647+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.1 0 REMOVED 21:00:43"}
+{"t": "2026-11-23T03:00:43.734334+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.11 0 REMOVED 21:00:43"}
+{"t": "2026-11-23T03:00:43.734479+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.9 0 REMOVED 21:00:43"}
+{"t": "2026-11-23T03:00:43.734500+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.9 0 REMOVED 21:00:43"}
+{"t": "2026-11-23T03:00:43.759911+00:00", "dir": "sent", "line": "SB AAPL Lv1"}
+{"t": "2026-11-23T03:00:43.839841+00:00", "dir": "recv", "line": "$Quote AAPL A:0 Asz:0 B:0 Bsz:0 V:0 L:0 Hi:0 Lo:0 op:0 ycl:342.56 tcl:0 PE:Q VWAP:0 tradesAllDay:0 RVOL:0 T:19:00:00"}
+{"t": "2026-11-23T03:00:44.762378+00:00", "dir": "sent", "line": "SB AAPL Lv2"}
+{"t": "2026-11-23T03:00:45.741889+00:00", "dir": "recv", "line": "$Lv2 AAPL A BOAT 349 0 REMOVED 21:00:45"}
+{"t": "2026-11-23T03:00:45.763346+00:00", "dir": "sent", "line": "SB AAPL tms"}
+{"t": "2026-11-23T03:00:45.846608+00:00", "dir": "recv", "line": "$Lv2 AAPL B MOON 0 7 REMOVED 21:00:45"}
+{"t": "2026-11-23T03:00:46.058188+00:00", "dir": "recv", "line": "$Lv2 AAPL B MOON 0 5 REMOVED 21:00:46"}
+{"t": "2026-11-23T03:00:46.586088+00:00", "dir": "recv", "line": "$Lv2 AAPL B BOAT 348.53 1 REMOVED 21:00:46"}
+{"t": "2026-11-23T03:00:47.106292+00:00", "dir": "recv", "line": "$Lv2 AAPL B BOAT 348.47 2 REMOVED 21:00:47"}
+{"t": "2026-11-23T03:00:49.386057+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 292 0 REMOVED 21:00:49"}
+{"t": "2026-11-23T03:00:49.496129+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 292 0 REMOVED 21:00:49"}
+{"t": "2026-11-23T03:00:49.716335+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.11 0 REMOVED 21:00:49"}
+{"t": "2026-11-23T03:00:49.829015+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.1 0 REMOVED 21:00:49"}
+{"t": "2026-11-23T03:00:50.038730+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 292 0 REMOVED 21:00:50"}
+{"t": "2026-11-23T03:00:50.141420+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 292 0 REMOVED 21:00:50"}
+{"t": "2026-11-23T03:00:51.076661+00:00", "dir": "recv", "line": "$Lv2 AAPL B BOAT 348.53 1 REMOVED 21:00:51"}
+{"t": "2026-11-23T03:00:51.716631+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.11 0 REMOVED 21:00:51"}
+{"t": "2026-11-23T03:00:51.830028+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.1 0 REMOVED 21:00:51"}
+{"t": "2026-11-23T03:00:51.936467+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 292 0 REMOVED 21:00:51"}
+{"t": "2026-11-23T03:00:52.146558+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 292 0 REMOVED 21:00:52"}
+{"t": "2026-11-23T03:00:55.226604+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.11 0 REMOVED 21:00:55"}
+{"t": "2026-11-23T03:00:55.336361+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.1 0 REMOVED 21:00:55"}
+{"t": "2026-11-23T03:00:55.336789+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.9 0 REMOVED 21:00:55"}
+{"t": "2026-11-23T03:00:55.336822+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.9 0 REMOVED 21:00:55"}
+{"t": "2026-11-23T03:00:57.106298+00:00", "dir": "recv", "line": "$Lv2 AAPL A BOAT 348.9 0 REMOVED 21:00:57"}
+{"t": "2026-11-23T03:00:57.932682+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.11 0 REMOVED 21:00:57"}
+{"t": "2026-11-23T03:00:58.043021+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.21 2 REMOVED 21:00:57"}
+{"t": "2026-11-23T03:00:58.043135+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.1 1 REMOVED 21:00:58"}
+{"t": "2026-11-23T03:00:58.256495+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.9 0 REMOVED 21:00:58"}
+{"t": "2026-11-23T03:00:58.256634+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.9 0 REMOVED 21:00:58"}
+{"t": "2026-11-23T03:00:59.215583+00:00", "dir": "recv", "line": "$Lv2 AAPL A BOAT 349 0 REMOVED 21:00:59"}
+{"t": "2026-11-23T03:00:59.523604+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.11 0 REMOVED 21:00:59"}
+{"t": "2026-11-23T03:00:59.634852+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.21 2 REMOVED 21:00:59"}
+{"t": "2026-11-23T03:00:59.634985+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.1 1 REMOVED 21:00:59"}
+{"t": "2026-11-23T03:00:59.746208+00:00", "dir": "recv", "line": "$Lv2 DELL B BOAT 291.9 0 REMOVED 21:00:59"}
+{"t": "2026-11-23T03:00:59.746340+00:00", "dir": "recv", "line": "$Lv2 DELL B MOON 291.9 0 REMOVED 21:00:59"}
+{"t": "2026-11-23T03:01:00.596379+00:00", "dir": "recv", "line": "$Lv2 AAPL A BOAT 348.9 0 REMOVED 21:01:00"}

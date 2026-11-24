@@ -3143,6 +3143,17 @@ def depth_record(
     stop_after = _seconds_until_et(until) if until else None
     root = out or depth_dir()
     sources = build_sources(source, factories(levels=levels))
+    if any(s.name == "das" for s in sources):
+        from tradekit.config import get_settings
+        from tradekit.depth.sources.das import missing_settings as das_missing
+
+        d = get_settings().data
+        missing = das_missing(d.das_host, d.das_port, d.das_user, d.das_password, d.das_account)
+        if missing:
+            message = f"DAS source needs {', '.join(missing)} (set on the DAS machine; the host is 127.0.0.1)"
+            if source == "das":  # the only source: recording would capture nothing
+                raise click.UsageError(message)
+            click.echo(f"Warning: no DAS this run, recording from the fallback. {message}.", err=True)
     if any(s.name == "ibkr" for s in sources):
         from tradekit.config import get_settings
         from tradekit.depth.sources.ibkr import (
